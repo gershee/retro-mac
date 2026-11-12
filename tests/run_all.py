@@ -13,7 +13,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 PORT = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("RETRO_MAC_TEST_PORT", "8799")
 PY = sys.executable
-OFFLINE = ["test_text.py", "test_feeds.py", "test_house.py", "test_logging.py"]
+OFFLINE = ["test_text.py", "test_feeds.py", "test_house.py", "test_logging.py", "test_dash.py"]
 SPAWNING = ["test_junk.py", "test_fail.py", "test_security.py"]   # each starts its own testsrv.py on PORT
 
 

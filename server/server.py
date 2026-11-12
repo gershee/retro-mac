@@ -1375,39 +1375,52 @@ async def handle_event(request: web.Request):
     return web.json_response({"ok": True})
 
 
+dash_state = {"at": 0.0}    # when dash_loop last finished a pass (/health dash_age; doctor.sh checks it)
+DASH_EVERY = 30.0
+
+
+async def dash_tick(loop, last):
+    """One dashboard pass: refetch what is due, rebuild weather/agenda/day, broadcast if anything changed."""
+    now = time.time()
+    if now - _raw["weather_at"] > 900:
+        try:
+            dash["weather"] = await loop.run_in_executor(None, feeds.get_weather)
+            _raw["weather_at"] = now
+        except Exception as e:
+            log.warning("weather fetch failed: %s", e)
+            _raw["weather_at"] = now - 780  # retry in ~2 min, keep last data
+    if now - _raw["cal_at"] > 600:
+        try:
+            ev = await loop.run_in_executor(None, feeds.fetch_events)
+            if ev or not _raw["events"]:
+                _raw["events"] = ev
+            _raw["cal_at"] = now
+        except Exception as e:
+            log.warning("calendar fetch failed: %s", e)
+            _raw["cal_at"] = now - 480
+    _raw["reminders"] = feeds.load_reminders()
+    dash["agenda"] = feeds.build_agenda(_raw["events"], _raw["reminders"], feeds.load_attention())
+    try:
+        dash["day"] = feeds.day_timeline(_raw["events"], _raw["reminders"])   # v1.1 TODAY window
+    except Exception as e:
+        log.warning("day timeline failed: %s", e)
+    blob = json.dumps(dash, sort_keys=True)
+    if blob != last:
+        await broadcast(dash)
+    return blob
+
+
 async def dash_loop():
     loop = asyncio.get_running_loop()
     last = None
     while True:
-        now = time.time()
-        if now - _raw["weather_at"] > 900:
-            try:
-                dash["weather"] = await loop.run_in_executor(None, feeds.get_weather)
-                _raw["weather_at"] = now
-            except Exception as e:
-                log.warning("weather fetch failed: %s", e)
-                _raw["weather_at"] = now - 780  # retry in ~2 min, keep last data
-        if now - _raw["cal_at"] > 600:
-            try:
-                ev = await loop.run_in_executor(None, feeds.fetch_events)
-                if ev or not _raw["events"]:
-                    _raw["events"] = ev
-                _raw["cal_at"] = now
-            except Exception as e:
-                log.warning("calendar fetch failed: %s", e)
-                _raw["cal_at"] = now - 480
-        _raw["reminders"] = feeds.load_reminders()
-        dash["agenda"] = feeds.build_agenda(_raw["events"], _raw["reminders"], feeds.load_attention())
         try:
-            dash["day"] = feeds.day_timeline(_raw["events"], _raw["reminders"])   # v1.1 TODAY window
-        except Exception as e:
-            log.warning("day timeline failed: %s", e)
-        blob = json.dumps(dash, sort_keys=True)
-        if blob != last:
-            last = blob
-            await broadcast(dash)
+            last = await dash_tick(loop, last)
+            dash_state["at"] = time.time()
+        except Exception:
+            log.exception("dash loop")      # one bad row or feed must not freeze weather + agenda for good
         try:
-            await asyncio.wait_for(refresh_now.wait(), timeout=30)
+            await asyncio.wait_for(refresh_now.wait(), timeout=DASH_EVERY)
             refresh_now.clear()
             _raw["weather_at"] = _raw["cal_at"] = 0.0
         except asyncio.TimeoutError:
@@ -1495,6 +1508,8 @@ async def handle_health(request: web.Request):
                               "voice": v, "tui": {k: tui[k] for k in ("seen", "rec", "voice_on", "ready")},
                               "build": web_build(), "client_builds": list(ws_builds.values()),
                               "hook_v4_age": round(now - hook_seen["v4"], 1) if hook_seen["v4"] else None,
+                              # seconds since the dashboard loop last finished a pass (None = not yet)
+                              "dash_age": round(now - dash_state["at"], 1) if dash_state["at"] else None,
                               "fail": fail_log, "junk": junk_log,
                               "ptt": bool(settings.get("ptt")), "ptt_req": ptt_req, "ptt_seen": ptt_seen, "ptt_dry": ptt_dry,
                               "speech": {"busy": speech["busy"], "queued": speech_q.qsize(),

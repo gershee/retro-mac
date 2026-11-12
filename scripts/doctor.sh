@@ -31,6 +31,20 @@ except Exception: print("bad")' 2>/dev/null)
     ok "server: up, $3 voices"
     if [ "$2" -ge 1 ]; then ok "screen: $2 connected"; else fail "screen: 0 clients connected (kiosk browser not attached)"; fi
   fi
+  # dashboard loop (weather + agenda): /health dash_age = seconds since its last finished pass (every 30 s)
+  DA=$(printf '%s' "$H" | /usr/bin/env python3 -c 'import sys, json
+try:
+    a = json.load(sys.stdin).get("dash_age", "missing")
+    print(a if a == "missing" else ("none" if a is None else int(a)))
+except Exception:
+    print("bad")' 2>/dev/null)
+  case "$DA" in
+    missing) warn "dashboard: /health has no dash_age (server predates the guarded dash loop; restart it)" ;;
+    none) warn "dashboard: no pass finished yet (server just started, or the loop fails every time: see server.log)" ;;
+    ''|bad) ;;
+    *) if [ "$DA" -gt 120 ]; then fail "dashboard: last pass ${DA}s ago (dash loop stalled: weather + agenda frozen; see server.log)"
+       else ok "dashboard: last pass ${DA}s ago"; fi ;;
+  esac
 fi
 
 # voice banner / voice state (v0.4)
