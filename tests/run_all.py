@@ -4,6 +4,7 @@
   venv/bin/python tests/run_all.py [port]
 """
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -46,6 +47,10 @@ for t in SPAWNING:
     if (ROOT / "tests" / t).exists():
         results.append(run([PY, f"tests/{t}", PORT]))
 # push-to-talk needs the fake-TUI test server running alongside
+if shutil.which("node"):                     # web clock helpers; browser zone deliberately != the zones tested
+    results.append(run(["node", "tests/test_time.js"], env=dict(os.environ, TZ="America/Los_Angeles")))
+else:
+    print("SKIP  test_time.js (node not installed)")
 srv = subprocess.Popen([PY, "tests/testsrv.py", "server/server.py", PORT], cwd=ROOT,
                        env=dict(os.environ, FAKE_TUI="1"), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 try:

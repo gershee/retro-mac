@@ -803,7 +803,7 @@
     ws.onmessage = (ev) => {
       let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
       if (m.type === 'settings') { if (!PTT_URL) pttOn = !!m.ptt; if (!urlTheme) applyTheme(m.theme); if (typeof m.tone === 'number' && urlTone === null) setTone(m.tone); return; }
-      if (m.type === 'dash') { dash = m; return; }
+      if (m.type === 'dash') { dash = m; if (window.RetroTime) RetroTime.setTz(m.tz); return; }
       if (m.type === 'crew') { const prev = S.crew; S.crew = m.crew; if (window.RetroCards) RetroCards.noteCrew(m.crew); crewMood(prev, m.crew); return; }
       if (m.type === 'stop') { stopSpeech(true, m.upto); return; }
       if (m.type === 'voice' || m.type === 'level') {

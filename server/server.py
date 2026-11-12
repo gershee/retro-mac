@@ -82,7 +82,7 @@ PTT_WINDOW = 8.0          # push-to-talk: the mic closes by itself if nobody sta
 ptt_req = {"id": 0, "at": 0.0, "kind": "", "window": PTT_WINDOW}   # last Space request; the wake daemon (mic meter + no-speech timeout) follows it
 ptt_seen = {"n": 0, "at": 0.0, "info": {}}   # debug breadcrumb: Space keydown reached the kiosk page (face.js), whether or not the server acted
 ptt_dry = {"n": 0, "at": 0.0, "would": ""}   # /ptt?dry=1 records the decision without pressing tmux keys
-dash = {"type": "dash", "weather": None, "agenda": []}
+dash = {"type": "dash", "weather": None, "agenda": [], "tz": config.TZ_NAME}   # tz: the kiosk draws clocks in it
 _raw = {"events": [], "reminders": [], "weather_at": 0.0, "cal_at": 0.0}
 refresh_now = asyncio.Event()
 

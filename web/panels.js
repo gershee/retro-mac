@@ -4,6 +4,32 @@
   const MONO = 'Menlo, "Courier New", monospace';
   const font = (px, bold) => `${bold ? 'bold ' : ''}${px}px ${MONO}`;
 
+  // Wall-clock times on every panel and window follow the server's [location].timezone (sent as dash.tz), not the
+  // browser's, so agenda clocks match the server's TODAY / TMR / weekday labels. Unknown zone -> browser time.
+  const RetroTime = (() => {
+    const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    let tz = '', fmt = null;
+    function setTz(name) {
+      if (!name || name === tz) return;
+      try {
+        fmt = new Intl.DateTimeFormat('en-US', { timeZone: name, hourCycle: 'h23', year: 'numeric', month: 'numeric',
+          day: 'numeric', hour: 'numeric', minute: 'numeric', weekday: 'short' });
+        tz = name;
+      } catch (e) { /* unknown zone name: keep the current one */ }
+    }
+    function parts(ms) {
+      const d = new Date(ms);
+      if (!fmt) return { y: d.getFullYear(), mo: d.getMonth() + 1, d: d.getDate(), h: d.getHours(), m: d.getMinutes(), dow: d.getDay() };
+      const p = {}; for (const x of fmt.formatToParts(d)) p[x.type] = x.value;
+      return { y: +p.year, mo: +p.month, d: +p.day, h: (+p.hour) % 24, m: +p.minute, dow: DOW.indexOf(p.weekday) };
+    }
+    const clock = (ms) => { const p = parts(ms); return `${p.h % 12 || 12}:${String(p.m).padStart(2, '0')}${p.h < 12 ? 'A' : 'P'}`; };
+    const hr = (ms) => { const p = parts(ms); return `${p.h % 12 || 12}${p.h < 12 ? 'A' : 'P'}`; };
+    const dayStart = (ms) => { const p = parts(ms); return Math.floor(ms / 60e3) * 60e3 - (p.h * 60 + p.m) * 60e3; };
+    const sameDay = (a, b) => { const p = parts(a), q = parts(b); return p.y === q.y && p.mo === q.mo && p.d === q.d; };
+    return { setTz, parts, clock, hr, dayStart, sameDay, tz: () => tz };
+  })();
+  window.RetroTime = RetroTime;
   // Layout (512x342 logical screen). Right column sits beside the stepped-aside face.
   const COLX = 214, COLW = 282;
   const CARD = { x: COLX, y: 18, w: COLW, h: 306, titleH: 22 };
@@ -260,7 +286,7 @@
       if (h.length > 6) h.shift();
     }
   }
-  const clock = (d) => { const h = d.getHours() % 12 || 12; return `${h}:${String(d.getMinutes()).padStart(2, '0')}${d.getHours() < 12 ? 'A' : 'P'}`; };
+  const clock = (d) => RetroTime.clock(+d);
 
   // --------------------------------------------------------------- zoom state
   // Click a panel -> it zooms (classic Mac zoom-rect) to BIG and shows its full view; click / Esc

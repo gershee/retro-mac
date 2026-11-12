@@ -64,8 +64,9 @@
     for (let k = 0; k < 3; k++) ctx.fillRect(x + k * 2, y + 3 + k * 2, 2, 2);
     for (let k = 0; k < 4; k++) ctx.fillRect(x + 4 + k * 2, y + 5 - k * 2, 2, 2);
   }
-  const clock = (ms) => { const d = new Date(ms); const h = d.getHours() % 12 || 12; return `${h}:${String(d.getMinutes()).padStart(2, '0')}${d.getHours() < 12 ? 'A' : 'P'}`; };
-  const hr = (ms) => { const d = new Date(ms); return `${d.getHours() % 12 || 12}${d.getHours() < 12 ? 'A' : 'P'}`; };
+  const RT = window.RetroTime;     // panels.js: wall clock in the server's time zone
+  const clock = (ms) => RT.clock(ms);
+  const hr = (ms) => RT.hr(ms);
   function dur(sec) {
     sec = Math.max(0, Math.round(sec));
     if (sec < 60) return `${sec}S`;
@@ -194,14 +195,14 @@
     } else text(ctx, clock(now), c.x + c.w - 8, y + 5, 22, true, 'r');
     y += 38;
     // timeline
-    const d0 = new Date(now); d0.setHours(0, 0, 0, 0);
+    const d0 = RT.dayStart(now);
     let h0 = 7, h1 = 22;
-    for (const e of evs) { h0 = Math.min(h0, new Date(e.s).getHours()); h1 = Math.max(h1, Math.min(24, Math.ceil((e.e - d0) / 3600e3))); }
+    for (const e of evs) { h0 = Math.min(h0, RT.parts(e.s).h); h1 = Math.max(h1, Math.min(24, Math.ceil((e.e - d0) / 3600e3))); }
     const X = (ms) => c.x + 2 + Math.round(Math.max(0, Math.min(1, ((ms - d0) / 3600e3 - h0) / (h1 - h0))) * (c.w - 4));
     blk(ctx); ctx.fillRect(c.x, y + 15, c.w, 2);
     ctx.font = font(10, false); ctx.textBaseline = 'top';
     for (let hh = h0; hh <= h1; hh++) {
-      const xx = X(d0.getTime() + hh * 3600e3);
+      const xx = X(d0 + hh * 3600e3);
       ctx.fillRect(xx, y + 17, 1, hh % 3 === 0 ? 4 : 2);
       if (hh % 3 === 0 && hh < h1) { const s = hh === 12 ? '12P' : hh === 0 || hh === 24 ? '12A' : hh > 12 ? `${hh - 12}P` : `${hh}A`; ctx.fillText(s, xx - ctx.measureText(s).width / 2, y + 22); }
     }
@@ -258,7 +259,7 @@
     blk(ctx); dots(ctx, c.x, ty - 5, c.w);
     const tw = text(ctx, 'TOMORROW AM', c.x, ty + 1, 11, true);
     const tm = (day.tmr || []).map(e => `${clock(Date.parse(e.s))} ${String(e.title).toUpperCase()}`);
-    const h8 = (() => { const d = new Date(now); d.setDate(d.getDate() + 1); d.setHours(8, 0, 0, 0); return wxAt(D, d.getTime()); })();
+    const h8 = wxAt(D, RT.dayStart(RT.dayStart(now) + 36 * 3600e3) + 8 * 3600e3);   // tomorrow 8 AM, server time
     const wtxt = h8 ? `8A ${wxShort(h8)}${gear(h8) ? ' \u2192 ' + gear(h8) : ''}` : '';
     ctx.font = font(11, true); const ww = wtxt ? ctx.measureText(wtxt).width : 0;
     if (wtxt) { ctx.fillText(wtxt, c.x + c.w - ww, ty + 1); }
@@ -432,9 +433,9 @@
       y += 14;
     }
     if (house.next_job) {
-      blk(ctx); const nj = house.next_job, d = new Date(nj.ts * 1000);
-      const sameDay = d.toDateString() === new Date().toDateString();
-      const when = (sameDay ? '' : ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'][d.getDay()] + ' ') + clock(nj.ts * 1000);
+      blk(ctx); const nj = house.next_job;
+      const sameDay = RT.sameDay(nj.ts * 1000, Date.now());
+      const when = (sameDay ? '' : ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'][RT.parts(nj.ts * 1000).dow] + ' ') + clock(nj.ts * 1000);
       ctx.font = font(11, true); ctx.textBaseline = 'top';
       ctx.fillText(fit(ctx, `NEXT JOB: ${nj.name} \u00b7 ${when} (IN ${dur(nj.ts - Date.now() / 1000)})`, c.w), c.x, c.y + c.h - 12);
     }
