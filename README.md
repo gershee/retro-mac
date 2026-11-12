@@ -173,6 +173,8 @@ To redistribute anything or use it commercially, swap Alan and Amy for CC0/CC-BY
 - Mac SE enclosure build log (display, speaker, mic, power)
 - Calendar adapters (ICS URL, CalDAV) alongside the generic command hook
 - Optional local wake word per agent ("hey Scout")
+- Lighter idle rendering: redraw only when a blink, glance or the clock changes (today ~10% CPU on a 2017 dual-core)
+- Split `server/server.py`: HOUSE probes into `house.py`, voice state machine into its own module
 
 ## Project layout
 
