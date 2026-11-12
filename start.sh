@@ -18,7 +18,8 @@ if curl -s -m 1 "http://127.0.0.1:$PORT/health" >/dev/null 2>&1; then echo "alre
 mkdir -p "$DATA/logs"
 export RETRO_MAC_PORT=$PORT
 if [ "$FG" = 1 ]; then exec "$PY" server/server.py "${ARGS[@]}"; fi
-nohup "$PY" server/server.py "${ARGS[@]}" > "$DATA/logs/server.log" 2>&1 &
+# The server writes its own rotating log (data/logs/server.log, 2 MB x 3); server.out only catches startup crashes.
+nohup "$PY" server/server.py "${ARGS[@]}" > "$DATA/logs/server.out" 2>&1 &
 echo "starting (pid $!), log: $DATA/logs/server.log"
 for i in $(seq 1 60); do
   if curl -s -m 1 "http://127.0.0.1:$PORT/health" >/dev/null 2>&1; then
@@ -28,4 +29,4 @@ for i in $(seq 1 60); do
   fi
   sleep 1
 done
-echo "server did not answer within 60 s; see $DATA/logs/server.log" >&2; exit 1
+echo "server did not answer within 60 s; see $DATA/logs/server.log and server.out" >&2; exit 1

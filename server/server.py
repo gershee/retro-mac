@@ -33,7 +33,9 @@ import base64
 import io
 import json
 import logging
+import logging.handlers
 import re
+import sys
 import time
 import wave
 from pathlib import Path
@@ -476,6 +478,14 @@ def clean_text(s, n=300) -> str:
     return s[:n]
 
 
+LOG_TEXT = 40    # spoken replies and transcripts are cut to this many chars in the log (privacy + log size)
+
+
+def snip(s) -> str:
+    s = clean_text(s, LOG_TEXT + 1)
+    return s if len(s) <= LOG_TEXT else s[:LOG_TEXT] + "..."
+
+
 def voice_public() -> dict:
     t = turn["t"]
     now = time.time()
@@ -498,7 +508,7 @@ async def set_voice(state: str, note: str = "", **kw):
     voice.update(state=state, since=time.time(), note=note, hold=hold, **kw)
     t = turn["t"]
     vlog.info("voice %s -> %s%s%s", prev, state, f" [{note}]" if note else "",
-              f" turn={t['kind']}:{t['label']!r} {t['text'][:60]!r}" if t else "")
+              f" turn={t['kind']}:{t['label']!r} {snip(t['text'])!r}" if t else "")
     await broadcast(voice_public())
 
 
@@ -870,7 +880,7 @@ async def junk_turn(text: str, sid: str = "") -> dict:
     without sound. A real turn that is already running (barge-in noise) is left alone."""
     now, t = time.time(), turn["t"]
     junk_log.update(at=now, count=junk_log["count"] + 1, last=clean_text(text, 40))
-    vlog.info("junk transcript dropped (not spoken): %r%s", clean_text(text, 40), " [turn running: ignored]" if t else "")
+    vlog.info("junk transcript dropped (not spoken): %r%s", snip(text), " [turn running: ignored]" if t else "")
     if t:
         return {"ok": True, "ignored": "turn running"}
     armed["until"] = 0.0                              # replies stay muted; nothing re-arms the mic
@@ -1113,13 +1123,13 @@ async def speak_narration(agent: str, raw: str, sid: str, t_recv: float):
     if not why and not segs:
         why = "nothing speakable"
     if why:
-        vlog.info("narration muted (%s): %r", why, raw[:60])
+        vlog.info("narration muted (%s): %r", why, snip(raw))
         return web.json_response({"ok": True, "muted": True, "why": why}, status=202)
     t["narr_at"] = now
     t["stuck"] = False
     t.setdefault("said", set()).update(norm_sentence(s) for _, s in segs)
     t["beat"] = now
-    vlog.info("narration -> speaking: %r", " ".join(s for _, s in segs)[:120])
+    vlog.info("narration -> speaking: %r", snip(" ".join(s for _, s in segs)))
     await enqueue_speech(agent, segs, kind="progress", sid=sid, progress=True, t_recv=t_recv)
     return web.json_response({"ok": True, "agent": agent, "kind": "progress"}, status=202)
 
@@ -1301,7 +1311,7 @@ async def run_speech(job: dict):
                          "stream": {"id": uid, "seq": i, "total": n, "final": i == n - 1, "dur": round(dur, 3)}},
                         want="stream")
         log.info("speech #%d %s%s %d/%d synth=%.2fs audio=%.2fs ttfa=%.2fs emotion=%s %r", uid, agent,
-                 " (progress)" if progress else "", i + 1, n, now - t0, dur, now - t_recv, emo, txt[:60])
+                 " (progress)" if progress else "", i + 1, n, now - t0, dur, now - t_recv, emo, snip(txt))
         pcm_all.append(pcm)
         sr_all = sr
     n_stream, n_legacy = client_kinds()
@@ -1743,13 +1753,37 @@ def make_app() -> web.Application:
     return app
 
 
+# ---------------------------------------------------------------------- logging
+# data/logs/server.log rotates at 2 MB x 3 (launchd never rotates). start.sh / launchd send raw stdout+stderr
+# (startup crashes only) to server.out, so nothing else holds server.log open across a rotation.
+LOG_FILE = config.LOG_DIR / "server.log"
+QUIET_PATHS = ('"GET /health', '"POST /level', '"POST /activity', '"GET /house')   # polled every few seconds
+
+
+class QuietAccess(logging.Filter):
+    def filter(self, rec):
+        m = rec.getMessage()
+        return not any(q in m for q in QUIET_PATHS)
+
+
+def setup_logging(console=None, log_file=None):
+    fmt = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+    fh = logging.handlers.RotatingFileHandler(log_file or LOG_FILE, maxBytes=2 * 1024 * 1024, backupCount=3,
+                                              encoding="utf-8")
+    fh.setFormatter(fmt)
+    root.addHandler(fh)
+    if console if console is not None else sys.stderr.isatty():     # ./start.sh --fg: also to the terminal
+        sh = logging.StreamHandler()
+        sh.setFormatter(fmt)
+        root.addHandler(sh)
+    logging.getLogger("aiohttp.access").addFilter(QuietAccess())
+    return fh
+
+
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    setup_logging()
     load_settings()
     load_voices()
-    class _Quiet(logging.Filter):
-        def filter(self, rec):
-            m = rec.getMessage()
-            return not ('"GET /health' in m or '"POST /level' in m)
-    logging.getLogger("aiohttp.access").addFilter(_Quiet())
     web.run_app(make_app(), host=HOST, port=PORT, print=lambda *_: log.info("http://%s:%d", HOST, PORT))

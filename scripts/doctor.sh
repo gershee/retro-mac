@@ -257,7 +257,9 @@ except Exception:
   fi
 fi
 
-# server.log tracebacks
+# server.log tracebacks (server.out = raw stdout/stderr: crashes before logging started)
+SO=$D/logs/server.out
+if [ -f "$SO" ] && tail -n 50 "$SO" | grep -q 'Traceback'; then fail "server.out: Traceback in last 50 lines (startup crash?)"; fi
 if [ -f "$SL" ]; then
   if tail -n 200 "$SL" | grep -q 'Traceback'; then fail "server.log: Traceback in last 200 lines"; else ok "server.log: no Traceback in last 200 lines"; fi
 else

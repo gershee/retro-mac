@@ -10,6 +10,7 @@
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
   <key>ThrottleInterval</key><integer>10</integer>
-  <key>StandardOutPath</key><string>__REPO__/data/logs/server.log</string>
-  <key>StandardErrorPath</key><string>__REPO__/data/logs/server.log</string>
+  <!-- the server writes its own rotating data/logs/server.log; raw stdout/stderr (startup crashes) go here -->
+  <key>StandardOutPath</key><string>__REPO__/data/logs/server.out</string>
+  <key>StandardErrorPath</key><string>__REPO__/data/logs/server.out</string>
 </dict></plist>
