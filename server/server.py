@@ -816,8 +816,6 @@ async def read_json(request):
 async def handle_voice_state(request: web.Request):
     if request.method == "GET":
         return web.json_response(voice_public())
-    if not origin_ok(request):
-        return web.json_response({"ok": False}, status=403)
     body = await read_json(request)
     if not isinstance(body, dict) or body.get("state") not in VOICE_STATES:
         return web.json_response({"ok": False, "error": "bad state"}, status=400)
@@ -852,8 +850,6 @@ async def handle_voice_state(request: web.Request):
 async def handle_voice_error(request: web.Request):
     """POST {kind: limit|generic, text?: <provider/TUI error text>, session_id?, force?}. Anything that learns a
     voice turn died (the pane watcher uses fail_turn directly; this is for hooks / wake daemon / tests)."""
-    if not origin_ok(request):
-        return web.json_response({"ok": False}, status=403)
     body = await read_json(request)
     if not isinstance(body, dict):
         return web.json_response({"ok": False}, status=400)
@@ -889,8 +885,6 @@ async def junk_turn(text: str, sid: str = "") -> dict:
 
 async def handle_voice_junk(request: web.Request):
     """Plugin: the transcript of this voice turn is junk and the turn was blocked before the model call."""
-    if not origin_ok(request):
-        return web.json_response({"ok": False}, status=403)
     body = await read_json(request)
     if not isinstance(body, dict):
         return web.json_response({"ok": False}, status=400)
@@ -900,8 +894,6 @@ async def handle_voice_junk(request: web.Request):
 async def handle_voice_turn(request: web.Request):
     """Called by the plugin at the start of every local (non chat-app) turn. Decides whether the turn came
     from the user's voice and returns {kind}: voice | result | cancel | quiet | none."""
-    if not origin_ok(request):
-        return web.json_response({"ok": False}, status=403)
     body = await read_json(request)
     if not isinstance(body, dict):
         return web.json_response({"ok": False}, status=400)
@@ -942,8 +934,6 @@ async def handle_voice_turn(request: web.Request):
 
 
 async def handle_level(request: web.Request):
-    if not origin_ok(request):
-        return web.json_response({"ok": False}, status=403)
     body = await read_json(request) or {}
     if voice["state"] in ("heard", "listening"):
         try:
@@ -956,8 +946,6 @@ async def handle_level(request: web.Request):
 
 
 async def handle_voice_pending(request: web.Request):
-    if not origin_ok(request):
-        return web.json_response({"ok": False}, status=403)
     body = await read_json(request) or {}
     op = body.get("op")
     if op == "add":
@@ -978,8 +966,6 @@ async def handle_voice_pending(request: web.Request):
 
 
 async def handle_activity(request: web.Request):
-    if not origin_ok(request):
-        return web.json_response({"ok": False}, status=403)
     try:
         body = await request.json()
     except Exception:
@@ -1031,16 +1017,44 @@ def norm_agent(a) -> str:
     return a if a in AGENTS else "alfred"
 
 
+# ------------------------------------------------------------------- guard
+# One gate for every request (DNS rebinding + cross-site requests from any web page the kiosk machine opens):
+#  - Host must be this server itself (127.0.0.1 / localhost / [::1] on our port), else 421 for every path;
+#  - anything that changes state (any non-GET, incl. /refresh) and the /ws upgrade must carry no Origin
+#    (curl, the Hermes plugin, the wake daemon) or our own origin, else 403.
+SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
+
+
+def allowed_hosts() -> set:
+    return {f"127.0.0.1:{PORT}", f"localhost:{PORT}", f"[::1]:{PORT}"}
+
+
+def host_ok(request: web.Request) -> bool:
+    return (request.headers.get("Host") or "").strip().lower() in allowed_hosts()
+
+
 def origin_ok(request: web.Request) -> bool:
     origin = request.headers.get("Origin")
-    if not origin:
-        return True  # curl / python callers
-    return origin in (f"http://{HOST}:{PORT}", f"http://localhost:{PORT}")
+    if origin is None:
+        return True  # curl / python callers send no Origin
+    return origin.strip().lower() in {f"http://{h}" for h in allowed_hosts()}
+
+
+@web.middleware
+async def guard(request: web.Request, handler):
+    if not host_ok(request):
+        log.warning("blocked request with foreign Host %r: %s %s", request.headers.get("Host", "")[:60],
+                    request.method, request.path)
+        return web.json_response({"ok": False, "error": "bad host"}, status=421)
+    upgrade = request.path == "/ws" or "websocket" in request.headers.get("Upgrade", "").lower()
+    if (request.method not in SAFE_METHODS or upgrade) and not origin_ok(request):
+        log.warning("blocked %s %s from foreign Origin %r", request.method, request.path,
+                    request.headers.get("Origin", "")[:60])
+        return web.json_response({"ok": False, "error": "bad origin"}, status=403)
+    return await handler(request)
 
 
 async def handle_speak(request: web.Request):
-    if not origin_ok(request):
-        return web.json_response({"ok": False, "error": "bad origin"}, status=403)
     try:
         body = await request.json()
     except Exception:
@@ -1111,8 +1125,6 @@ async def speak_narration(agent: str, raw: str, sid: str, t_recv: float):
 
 async def handle_arm(request: web.Request):
     """Wake word heard (or a follow-up mic window opened): allow spoken replies for the next N seconds."""
-    if not origin_ok(request):
-        return web.json_response({"ok": False}, status=403)
     try:
         secs = float((await request.json()).get("secs", 600))
     except Exception:
@@ -1122,8 +1134,6 @@ async def handle_arm(request: web.Request):
 
 
 async def handle_disarm(request: web.Request):
-    if not origin_ok(request):
-        return web.json_response({"ok": False}, status=403)
     armed["until"] = 0.0
     return web.json_response({"ok": True})
 
@@ -1134,8 +1144,6 @@ def retry_hint() -> str:
 
 async def handle_ptt_seen(request: web.Request):
     """Debug breadcrumb from face.js: a Space keydown reached the kiosk page (focus/visibility/ptt state in the body)."""
-    if not origin_ok(request):
-        return web.json_response({"ok": False}, status=403)
     try:
         info = await request.json()
     except Exception:
@@ -1151,8 +1159,6 @@ async def handle_ptt(request: web.Request):
     recording -> Ctrl-B again (stop + transcribe); busy (speaking / turn running / transcribing) -> 409, nothing happens;
     otherwise start a listening turn exactly like a wake word: arm 600 s, HEARD banner, crew listening, Ctrl-B in the
     hermes-voice TUI. The wake daemon follows ptt_req for the mic meter and the 8 s no-speech close."""
-    if not origin_ok(request):
-        return web.json_response({"ok": False}, status=403)
     if not settings.get("ptt"):
         return web.json_response({"ok": False, "action": "off", "error": "push-to-talk mode is off"}, status=409)
     now, vs, t = time.time(), voice["state"], turn["t"]
@@ -1333,8 +1339,6 @@ async def speech_started(job: dict):
 
 
 async def handle_event(request: web.Request):
-    if not origin_ok(request):
-        return web.json_response({"ok": False, "error": "bad origin"}, status=403)
     try:
         body = await request.json()
     except Exception:
@@ -1416,8 +1420,6 @@ async def start_background(app):
 
 async def handle_attention(request: web.Request):
     """POST {items: ["text", ...]} sets the 'needs attention' list; empty list clears it."""
-    if not origin_ok(request):
-        return web.json_response({"ok": False}, status=403)
     try:
         body = await request.json()
         items = [str(x)[:60] for x in body.get("items", [])][:5]
@@ -1434,8 +1436,6 @@ async def handle_refresh(request: web.Request):
 
 
 async def handle_ws(request: web.Request):
-    if not origin_ok(request):
-        return web.Response(status=403)
     ws = web.WebSocketResponse(heartbeat=20)
     await ws.prepare(request)
     clients.add(ws)
@@ -1493,8 +1493,6 @@ async def handle_health(request: web.Request):
 
 async def handle_stop(request: web.Request):
     """Cut any speech in progress on every connected display (tap-to-stop / future voice barge-in)."""
-    if not origin_ok(request):
-        return web.json_response({"ok": False}, status=403)
     speak_until["t"] = 0.0
     armed["until"] = 0.0
     state.update(state="idle")
@@ -1709,7 +1707,7 @@ async def handle_index(request: web.Request):
 
 
 def make_app() -> web.Application:
-    app = web.Application(client_max_size=1024 * 64)
+    app = web.Application(client_max_size=1024 * 64, middlewares=[guard])
     app.router.add_get("/", handle_index)
     app.router.add_get("/ws", handle_ws)
     app.router.add_get("/health", handle_health)

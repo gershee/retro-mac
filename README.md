@@ -137,7 +137,7 @@ None are required. Weather uses Open-Meteo (no key). The calendar is whatever co
 
 ## Privacy
 
-- **Local only.** The server binds to `127.0.0.1`. Nothing is exposed to your network, and there is no telemetry.
+- **Local only.** The server binds to `127.0.0.1`. Nothing is exposed to your network, and there is no telemetry. Requests with a foreign `Host` (DNS rebinding) are refused, and so are state-changing requests or WebSocket connections from another site's `Origin`.
 - **The mic is opt-in.** In push-to-talk mode the wake daemon does not hold the microphone while idle. It opens the mic only after you press Space.
 - **Speech stays on the machine.** TTS is Piper on your CPU. STT is whatever your Hermes is configured with (local whisper by default in this setup).
 - **Minimal crew telemetry.** The plugin sends short status verbs and file basenames to the display, never command text or file contents. Junk transcripts such as `[BLANK_AUDIO]`, "thanks for watching" and a lone "you" are dropped before any model call.
