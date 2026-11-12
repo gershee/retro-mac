@@ -18,6 +18,14 @@ You can try it in under two minutes without Hermes, Google or any API keys: `./s
 |---|---|---|---|
 | ![dashboard](docs/media/dashboard.png) | ![today window](docs/media/window-today.png) | ![faces](docs/media/faces.png) | ![themes](docs/media/themes.png) |
 
+## Install it with your AI agent
+
+The easiest way to set it up: paste this into Hermes Agent, Claude Code, Codex or any agent that can use your terminal.
+
+> Install and set up Retro Mac for me by following https://github.com/gershee/retro-mac/blob/main/docs/AGENT-INSTALL.md. Keep everything local, show me the demo first, and ask me before installing system packages, editing my Hermes config, restarting my gateway or turning on the mic.
+
+The [full prompt](docs/AGENT-INSTALL.md) walks the agent through the demo, your city and voices, the Hermes plugin, push-to-talk and auto-start, checking each step with you. Prefer doing it by hand? See [Quick start](#quick-start-demo-mode-about-2-minutes).
+
 ## Features
 
 - **A pixel face for each agent.** Each agent has its own eyes, brows and mouth. The face blinks, glances around, yawns and dozes, and its mood follows the time of day: fresh in the morning, drowsy at night, asleep after 11 pm with floating z's. It reacts to activity with thinking, working, listening, surprised, happy and concerned expressions.
@@ -73,7 +81,7 @@ More detail: [ARCHITECTURE.md](ARCHITECTURE.md).
 Requirements: Python 3.11+ and a browser. No Hermes, no keys, no calendar.
 
 ```bash
-git clone https://github.com/<you>/retro-mac.git && cd retro-mac
+git clone https://github.com/gershee/retro-mac.git && cd retro-mac
 python3 -m venv venv && venv/bin/pip install -r requirements.txt
 ./start.sh --demo
 open http://127.0.0.1:8787/          # or visit it in any browser
