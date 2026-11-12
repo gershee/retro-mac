@@ -23,5 +23,10 @@ RT.setTz('Asia/Tokyo');
 check('switch zone', RT.clock(t), '12:05A');
 RT.setTz('Not/AZone');
 check('unknown zone keeps the last good one', RT.clock(t), '12:05A');
+RT.setTz('America/New_York');
+const nowMs = Date.parse('2026-11-12T16:00:00Z');      // 11:00 AM New York
+check('weather 30 min old: no stamp', RT.asOf(nowMs / 1000 - 30 * 60, nowMs), '');
+check('weather 46 min old: AS OF', RT.asOf(nowMs / 1000 - 46 * 60, nowMs), 'AS OF 10:14A');
+check('weather without at: no stamp', RT.asOf(undefined, nowMs), '');
 console.log('FAILURES:', fails);
 process.exit(fails ? 1 : 0);

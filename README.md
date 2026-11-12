@@ -99,7 +99,7 @@ venv/bin/pip install -r requirements-voice.txt    # Piper TTS + onnxruntime, abo
 scripts/fetch-models.sh                           # the three voices, about 190 MB, SHA-256 checked
 ```
 
-Preview URLs: `/?test&agent=scout&mood=sleep`, `/?test&hour=3&idle=120` (fake the clock), `/?theme=amber`, `/?tone=0`.
+Preview URLs: `/?test&agent=scout&mood=sleep`, `/?test&hour=3&idle=120` (fake the clock), `/?test&wxage=60` (a stale weather reading shows "AS OF"), `/?theme=amber`, `/?tone=0`.
 
 Use a different port: `RETRO_MAC_PORT=8797 ./start.sh --demo`. Stop the server with `kill $(lsof -tiTCP:8787 -sTCP:LISTEN)`.
 

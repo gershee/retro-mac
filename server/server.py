@@ -1386,7 +1386,8 @@ async def dash_tick(loop, last):
     now = time.time()
     if now - _raw["weather_at"] > 900:
         try:
-            dash["weather"] = await loop.run_in_executor(None, feeds.get_weather)
+            w = await loop.run_in_executor(None, feeds.get_weather)
+            dash["weather"] = dict(w, at=now)            # `at`: the panel says "AS OF 9:15A" once it is old
             _raw["weather_at"] = now
         except Exception as e:
             log.warning("weather fetch failed: %s", e)

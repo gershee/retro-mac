@@ -54,6 +54,7 @@ async def main():
     check("agenda built after the failure", s.dash["agenda"][-1]["title"], "NOTHING ELSE TODAY")
     age = (await health())["dash_age"]
     check("health: dash_age is fresh", isinstance(age, float) and age < 1.0, True)
+    check("weather carries its fetch time (at)", isinstance(s.dash["weather"].get("at"), float), True)
     task.cancel()
 
     # calendars through the server's pass: a failed calendar keeps its events, an empty one clears (M2)

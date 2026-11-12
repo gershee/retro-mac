@@ -472,7 +472,8 @@
   function titleOf(key, D) {
     if (key === 'today') return 'TODAY' + (D.day && D.day.date ? ' - ' + D.day.date : '');
     if (key === 'crew') { const n = ['alfred', 'scout', 'maker'].filter(a => D.crew && D.crew[a] && D.crew[a].status !== 'idle').length; return n ? `CREW - ${n} BUSY` : 'CREW - ALL IDLE'; }
-    if (key === 'weather') return 'WEATHER' + (D.weather && D.weather.place ? ' - ' + D.weather.place : '');
+    if (key === 'weather') { const a = D.weather ? RT.asOf(D.weather.at) : '';
+      return 'WEATHER' + (D.weather && D.weather.place ? ' - ' + D.weather.place : '') + (a ? ' - ' + a : ''); }
     if (key === 'house') { if (!house) return 'HOUSE - CHECKING..'; const n = houseDown(); return n ? `HOUSE - ${n} DOWN` : 'HOUSE - ALL SYSTEMS UP'; }
     const n = alertItems(D).length; return n ? `ALERTS - ${n}` : 'ALERTS - ALL QUIET';
   }

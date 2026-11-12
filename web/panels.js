@@ -27,7 +27,16 @@
     const hr = (ms) => { const p = parts(ms); return `${p.h % 12 || 12}${p.h < 12 ? 'A' : 'P'}`; };
     const dayStart = (ms) => { const p = parts(ms); return Math.floor(ms / 60e3) * 60e3 - (p.h * 60 + p.m) * 60e3; };
     const sameDay = (a, b) => { const p = parts(a), q = parts(b); return p.y === q.y && p.mo === q.mo && p.d === q.d; };
-    return { setTz, parts, clock, hr, dayStart, sameDay, tz: () => tz };
+    // Weather reading age: "AS OF 9:15A" once it is over 45 min old (a failed refetch keeps the last reading).
+    // Preview: /?test&wxage=60 pretends the reading is 60 min old.
+    let wxAge = NaN;
+    try { const q = new URLSearchParams(location.search); if (q.has('test')) wxAge = parseFloat(q.get('wxage')); } catch (e) { /* no page */ }
+    const asOf = (at, nowMs) => {
+      if (!at) return '';
+      const sec = isNaN(wxAge) ? (nowMs || Date.now()) / 1000 - at : wxAge * 60;
+      return sec > 45 * 60 ? `AS OF ${clock(isNaN(wxAge) ? at * 1000 : (nowMs || Date.now()) - wxAge * 60e3)}` : '';
+    };
+    return { setTz, parts, clock, hr, dayStart, sameDay, asOf, tz: () => tz };
   })();
   window.RetroTime = RetroTime;
   // Layout (512x342 logical screen). Right column sits beside the stepped-aside face.
@@ -73,6 +82,14 @@
     ctx.fillStyle = '#fff'; ctx.fillRect(x + (w - tw) / 2 - 8, y + 3, tw + 16, titleH - 5);
     ctx.fillStyle = '#000'; ctx.textBaseline = 'middle';
     ctx.fillText(t, x + (w - tw) / 2, y + titleH / 2 + 1);
+  }
+  function staleTag(ctx, r, s) {               // small tag at the right end of a title bar, title-box style
+    if (!s) return;
+    const { x, y, w, titleH } = r;
+    ctx.font = font(10, true);
+    const tw = ctx.measureText(s).width;
+    ctx.fillStyle = '#fff'; ctx.fillRect(x + w - tw - 18, y + 3, tw + 12, titleH - 5);
+    ctx.fillStyle = '#000'; ctx.textBaseline = 'middle'; ctx.fillText(s, x + w - tw - 12, y + titleH / 2 + 1);
   }
 
   // ---------------------------------------------------------------- big card
@@ -175,6 +192,7 @@
   const place = wx => String((wx && wx.place) || 'WEATHER').toUpperCase();
   function drawWeather(ctx, wx, R, t) {
     frame(ctx, R, place(wx));
+    staleTag(ctx, R, wx && RetroTime.asOf(wx.at));
     if (!wx) { ctx.font = font(12); ctx.textBaseline = 'top'; ctx.fillStyle = '#000'; ctx.fillText('LOADING WEATHER..', R.x + 12, R.y + R.titleH + 14); return; }
     const x = R.x + 14, y = R.y + R.titleH + 12;
     drawIcon(ctx, wx.icon, x, y, t);
@@ -312,6 +330,7 @@
 
   function drawWeatherBig(ctx, wx, R, t) {
     frame(ctx, R, place(wx) + ' WEATHER');
+    staleTag(ctx, R, wx && RetroTime.asOf(wx.at));
     ctx.fillStyle = '#000'; ctx.textBaseline = 'top';
     if (!wx) { ctx.font = font(14); ctx.fillText('LOADING WEATHER..', R.x + 16, R.y + R.titleH + 16); return; }
     const x0 = R.x + 18, y0 = R.y + R.titleH + 14;
