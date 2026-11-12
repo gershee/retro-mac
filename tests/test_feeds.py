@@ -76,5 +76,30 @@ check("timeline: today's timed rows incl. past", [r["title"] for r in day["event
       ["Ended", "Standup", "Lunch", "Call the bank"])
 check("timeline: tomorrow morning", [r["title"] for r in day["tmr"]], ["Dentist", "Water plants"])
 check("timeline: all-day", day["allday"], ["Holiday"])
+
+# calendars: per-calendar results; a failing calendar keeps its old events, an empty success clears them
+FIX = Path(__file__).resolve().parent / "fixtures"
+feeds.CAL_COMMAND = [sys.executable, str(FIX / "fake_cal.py"), "{calendar}", "{start}", "{end}"]
+feeds.CALENDARS = ["work", "home", "bad", "empty"]
+res = feeds.fetch_calendars()
+check("fetch: ok/fail per calendar", {k: v["ok"] for k, v in res.items()},
+      {"work": True, "home": True, "bad": False, "empty": True})
+check("fetch: failure carries the reason", "token expired" in res["bad"]["error"], True)
+check("fetch: cancelled dropped, both start shapes parsed", [e["title"] for e in res["work"]["events"]],
+      ["work standup", "Shared lunch"])
+cals, merged, failed = feeds.merge_calendars({}, res)
+check("merge: shared event shown once", [e["title"] for e in merged], ["work standup", "Shared lunch", "home standup"])
+check("merge: failed list", [c for c, _ in failed], ["bad"])
+x = {"title": "Old bad-cal event", "start": at(0, 14), "end": at(0, 15), "all": False}
+y = {"title": "Deleted event", "start": at(0, 16), "end": at(0, 17), "all": False}
+cals, merged, failed = feeds.merge_calendars({"bad": [x], "empty": [y]}, res)
+check("merge: failed calendar keeps its previous events", cals["bad"], [x])
+check("merge: empty successful result clears the calendar", cals["empty"], [])
+check("merge: merged list = kept + fresh", [e["title"] for e in merged],
+      ["work standup", "Shared lunch", "home standup", "Old bad-cal event"])
+cals, merged, _ = feeds.merge_calendars({"gone": [x]}, {"work": res["work"]})
+check("merge: calendar removed from config is dropped", (list(cals), len(merged)), (["work"], 2))
+feeds.CAL_COMMAND = []
+check("fetch: no command -> no calendars", feeds.fetch_calendars(), {})
 print("FAILURES:", fails)
 sys.exit(1 if fails else 0)

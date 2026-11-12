@@ -1375,6 +1375,7 @@ async def handle_event(request: web.Request):
     return web.json_response({"ok": True})
 
 
+_cals = {}                  # calendar -> its last good event list (a failed fetch keeps the previous one)
 dash_state = {"at": 0.0}    # when dash_loop last finished a pass (/health dash_age; doctor.sh checks it)
 DASH_EVERY = 30.0
 
@@ -1390,14 +1391,13 @@ async def dash_tick(loop, last):
             log.warning("weather fetch failed: %s", e)
             _raw["weather_at"] = now - 780  # retry in ~2 min, keep last data
     if now - _raw["cal_at"] > 600:
-        try:
-            ev = await loop.run_in_executor(None, feeds.fetch_events)
-            if ev or not _raw["events"]:
-                _raw["events"] = ev
-            _raw["cal_at"] = now
-        except Exception as e:
-            log.warning("calendar fetch failed: %s", e)
-            _raw["cal_at"] = now - 480
+        res = await loop.run_in_executor(None, feeds.fetch_calendars)
+        new, _raw["events"], failed = feeds.merge_calendars(_cals, res)
+        _cals.clear()
+        _cals.update(new)
+        for cal, err in failed:
+            log.warning("calendar %s fetch failed (%s): keeping its %d previous event(s)", cal, err, len(new.get(cal, [])))
+        _raw["cal_at"] = now - 480 if failed else now       # retry a failed calendar in ~2 min
     _raw["reminders"] = feeds.load_reminders()
     dash["agenda"] = feeds.build_agenda(_raw["events"], _raw["reminders"], feeds.load_attention())
     try:

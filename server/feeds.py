@@ -191,41 +191,74 @@ def _parse_dt(s):
     return datetime.fromisoformat(s).replace(tzinfo=TZ), True  # all-day
 
 
-def fetch_events() -> list:
+def _events_from(data: list) -> list:
+    out = []
+    for e in data:
+        if not isinstance(e, dict) or e.get("status") == "cancelled":
+            continue
+        try:
+            s, s_all = _parse_dt(e["start"])
+            en, _ = _parse_dt(e["end"])
+        except Exception:
+            continue
+        out.append({"title": e.get("summary") or "(no title)", "start": s.isoformat(), "end": en.isoformat(), "all": s_all})
+    return out
+
+
+def fetch_calendars() -> dict:
     """Run config.toml [calendar].command once per calendar ({calendar}, {start}, {end} are substituted) and parse
     the JSON list it prints (Google Calendar API event shape: summary, start, end, status; text before the first
-    '[' is ignored)."""
+    '[' is ignored). Returns {calendar: {"ok": True, "events": [...]}} or {"ok": False, "error": "..."} per calendar,
+    so one slow or failing calendar never wipes the others (see merge_calendars)."""
     if config.DEMO:
         import demo
-        return demo.events()
+        return {"demo": {"ok": True, "events": demo.events()}}
     if not CAL_COMMAND:
-        return []
+        return {}
     now = _now()
     start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     end = start + timedelta(days=2)
-    events, seen = [], set()
+    out = {}
     for cal in CALENDARS:
         try:
             argv = [str(a).format(calendar=cal, start=start.isoformat(), end=end.isoformat()) for a in CAL_COMMAND]
             argv[0] = str(config._expand(argv[0]))
-            out = subprocess.run(argv, capture_output=True, text=True, timeout=60).stdout
-            data = json.loads(out[out.index("["):])
-        except Exception:
-            continue
-        for e in data:
-            if e.get("status") == "cancelled":
-                continue
-            key = (e.get("summary"), e.get("start"))
-            if key in seen:
-                continue
-            seen.add(key)
-            try:
-                s, s_all = _parse_dt(e["start"])
-                en, _ = _parse_dt(e["end"])
-            except Exception:
-                continue
-            events.append({"title": e.get("summary") or "(no title)", "start": s.isoformat(), "end": en.isoformat(), "all": s_all})
-    return events
+            p = subprocess.run(argv, capture_output=True, text=True, timeout=60)
+            if p.returncode != 0 and "[" not in p.stdout:
+                raise RuntimeError(f"exit {p.returncode}: {(p.stderr or p.stdout).strip()[:80]}")
+            data = json.loads(p.stdout[p.stdout.index("["):])
+            if not isinstance(data, list):
+                raise ValueError("not a JSON list")
+            out[cal] = {"ok": True, "events": _events_from(data)}
+        except Exception as e:
+            out[cal] = {"ok": False, "error": f"{type(e).__name__}: {str(e)[:100]}"}
+    return out
+
+
+def merge_calendars(prev: dict, results: dict):
+    """prev {calendar: [events]} + one fetch_calendars() round -> (new per-calendar dict, merged event list, failed).
+    A calendar that failed this round keeps its previous events; a successful round replaces them, even when it is
+    empty (so deleting the last event clears it). Duplicates across calendars (same title + start) are shown once."""
+    cals = {k: v for k, v in prev.items() if k in results}
+    failed = []
+    for cal, r in results.items():
+        if r.get("ok"):
+            cals[cal] = list(r.get("events") or [])
+        else:
+            failed.append((cal, r.get("error") or "failed"))
+    merged, seen = [], set()
+    for cal in results:
+        for e in cals.get(cal, []):
+            key = (e["title"], e["start"])
+            if key not in seen:
+                seen.add(key)
+                merged.append(e)
+    return cals, merged, failed
+
+
+def fetch_events() -> list:
+    """All calendars in one list (no per-calendar memory; the server uses fetch_calendars + merge_calendars)."""
+    return merge_calendars({}, fetch_calendars())[1]
 
 
 def load_reminders() -> list:

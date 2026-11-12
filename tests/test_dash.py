@@ -30,7 +30,7 @@ async def health():
 s.log.disabled = True                          # the expected traceback would only clutter the output
 F = s.feeds
 F.get_weather = lambda: {"temp": 50, "lines": []}
-F.fetch_events = lambda: []
+F.fetch_calendars = lambda: {}
 F.load_attention = lambda: []
 boom = {"n": 0}
 
@@ -55,6 +55,24 @@ async def main():
     age = (await health())["dash_age"]
     check("health: dash_age is fresh", isinstance(age, float) and age < 1.0, True)
     task.cancel()
+
+    # calendars through the server's pass: a failed calendar keeps its events, an empty one clears (M2)
+    ev = lambda t: {"title": t, "start": "2099-01-01T09:00:00+00:00", "end": "2099-01-01T10:00:00+00:00", "all": False}
+    rounds = iter([{"a": {"ok": True, "events": [ev("A1")]}, "b": {"ok": True, "events": [ev("B1")]}},
+                   {"a": {"ok": False, "error": "TimeoutExpired: 60"}, "b": {"ok": True, "events": []}}])
+    F.fetch_calendars = lambda: next(rounds)
+    warned = []
+    s.log.disabled = False
+    s.log.warning = lambda *a: warned.append(a[0] % a[1:])
+    loop = asyncio.get_running_loop()
+    s._raw["cal_at"] = 0.0
+    await s.dash_tick(loop, None)
+    check("calendars round 1", [e["title"] for e in s._raw["events"]], ["A1", "B1"])
+    s._raw["cal_at"] = 0.0
+    await s.dash_tick(loop, None)
+    check("calendars round 2: a kept (failed), b cleared (empty)", [e["title"] for e in s._raw["events"]], ["A1"])
+    check("failed calendar logged as a warning", any("calendar a fetch failed" in w and "keeping its 1" in w
+                                                     for w in warned), True)
 
 
 asyncio.run(main())
