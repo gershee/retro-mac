@@ -1,0 +1,42 @@
+# Retro Mac configuration. Copy to config.toml (git-ignored) and edit.
+# Everything is optional: with no config.toml the server uses these defaults.
+# `./start.sh --demo` ignores all external sources and shows sample data.
+
+[server]
+port = 8787            # always binds 127.0.0.1 only. Env RETRO_MAC_PORT overrides.
+demo = false           # true = sample weather / agenda / crew, no Hermes. Same as --demo or RETRO_MAC_DEMO=1.
+
+[location]
+# Weather comes from Open-Meteo (free, no key). The name is the WEATHER panel title (keep it short).
+name = "SAN FRANCISCO"
+latitude = 37.7749
+longitude = -122.4194
+timezone = ""          # IANA name, e.g. "America/Chicago". "" = this machine's time zone.
+
+[calendar]
+# Optional. A command that prints a JSON list of events for ONE calendar between {start} and {end}.
+# {calendar}, {start}, {end} are substituted per call. Accepted event shape (Google Calendar API style):
+#   [{"summary": "Standup", "start": "2026-01-05T09:30:00-05:00", "end": "...", "status": "confirmed"}]
+#   "start"/"end" may also be {"dateTime": ...} / {"date": "2026-01-05"} (all-day).
+# Leave command empty for no calendar (reminders from Hermes cron still show).
+command = []
+# command = ["~/bin/my-calendar-json", "--calendar", "{calendar}", "--from", "{start}", "--to", "{end}"]
+calendars = ["primary"]
+
+[hermes]
+home = "~/.hermes"               # HERMES_HOME. Used for cron reminders (cron/jobs.json) and gateway status.
+voice_session = "hermes-voice"   # tmux session running `hermes --tui` with voice mode on (voice/voice-session.sh)
+
+[house]
+# Extra local services the HOUSE window (key 4) pings. Any HTTP answer below 500 counts as up.
+services = [
+  # { name = "NAS", url = "http://127.0.0.1:5000/" },
+]
+audit_dir = ""         # optional folder with a nightly audit's last-run.json (+ ALERT.txt)
+
+[voices]
+# Piper voices per agent (scripts/fetch-models.sh downloads these three). Missing voice = beep-speak fallback.
+dir = "voices"
+alfred = "en_GB-alan-medium.onnx"
+scout = "en_US-amy-medium.onnx"
+maker = "en_US-joe-medium.onnx"

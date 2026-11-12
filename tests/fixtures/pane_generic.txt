@@ -1,0 +1,4 @@
+ ┊  The model returned an empty response after 3 attempts.                                                   ▄▀▀▄▀▀▄▀▀▄   ┃
+                                                                                                           ▀▀▀▀▀▀▀▀    ┃
+    This turn did not
+    complete. Some actions may already have run; verify their effects before resending.                    ▀▀▀▀▀▀▀▀    ┃

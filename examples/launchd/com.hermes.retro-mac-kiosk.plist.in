@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.hermes.retro-mac-kiosk</string>
+  <key>ProgramArguments</key><array>
+    <string>/bin/bash</string>
+    <string>-c</string>
+    <string>for i in $(seq 1 40); do curl -sf http://127.0.0.1:__PORT__/health >/dev/null &amp;&amp; break; sleep 2; done; exec __REPO__/scripts/kiosk.sh</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>LimitLoadToSessionType</key><string>Aqua</string>
+  <key>StandardOutPath</key><string>__REPO__/data/logs/kiosk.log</string>
+  <key>StandardErrorPath</key><string>__REPO__/data/logs/kiosk.log</string>
+</dict></plist>

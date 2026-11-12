@@ -1,0 +1,31 @@
+# Python
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# Runtime state: settings, attention list, logs, kiosk Chrome profile, generated keyword file
+data/
+settings.json
+attention.json
+logs/
+chrome-profile/
+*.log
+
+# Local config (copy config.example.toml -> config.toml)
+config.toml
+.env
+
+# Models and voices: fetched by scripts/fetch-models.sh, never committed
+voices/
+models/
+*.onnx
+*.onnx.json
+*.bin
+*.tar.bz2
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
+*.swp

@@ -1,0 +1,12 @@
+name: retro_mac_face
+version: 0.6.0
+description: "Sends each finished reply to the local Retro Mac face display (127.0.0.1:8787). Additional output only; never touches chat delivery (Telegram, Discord...), and silently does nothing if the display server is down."
+author: retro-mac contributors
+kind: standalone
+provides_hooks:
+  - post_llm_call
+  - pre_llm_call
+  - pre_tool_call
+  - post_tool_call
+  - pre_transcription
+  - on_interim_message

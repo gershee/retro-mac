@@ -1,0 +1,44 @@
+#!/bin/bash
+# Push-to-talk mode. With it ON the wake word is ignored and the kiosk's SPACE bar is the talk key:
+# tap = start talking, tap again = send; tap while the face speaks = stop it.
+#   scripts/ptt on | off | status
+HERE="$(cd "$(dirname "$0")/.." && pwd)"
+BASE=${RETRO_MAC_BASE:-http://127.0.0.1:${RETRO_MAC_PORT:-8787}}
+SETTINGS=${RETRO_MAC_SETTINGS:-${RETRO_MAC_DATA:-$HERE/data}/settings.json}
+
+status() {
+  H=$(curl -s -m 3 "$BASE/health")
+  if [ -n "$H" ]; then
+    if printf '%s' "$H" | grep -q '"ptt": true'; then
+      echo 'ptt: ON  (wake word ignored; tap SPACE on the kiosk to talk)'
+    else
+      echo 'ptt: OFF (wake word live; Space only stops speech)'
+    fi
+  elif grep -q '"ptt": true' "$SETTINGS" 2>/dev/null; then
+    echo 'ptt: ON in settings.json (server not answering)'
+  else
+    echo 'ptt: OFF in settings.json (server not answering)'
+  fi
+}
+
+set_mode() {  # $1 = true|false
+  if ! curl -s -m 3 -X POST "$BASE/event" -H 'Content-Type: application/json' -d "{\"ptt\": $1}" >/dev/null; then
+    # server down: edit the persisted file directly (applies when the server starts)
+    mkdir -p "$(dirname "$SETTINGS")"
+    if [ -f "$SETTINGS" ] && grep -q '"ptt"' "$SETTINGS"; then
+      sed -i.bak -E "s/\"ptt\": *(true|false)/\"ptt\": $1/" "$SETTINGS" && rm -f "$SETTINGS.bak"
+    elif [ -f "$SETTINGS" ]; then
+      sed -i.bak "s/}[[:space:]]*$/, \"ptt\": $1}/" "$SETTINGS" && rm -f "$SETTINGS.bak"
+    else
+      printf '{"ptt": %s}\n' "$1" > "$SETTINGS"
+    fi
+    echo '(server not answering: wrote settings.json; it applies when the server starts)'
+  fi
+}
+
+case "$1" in
+  on)        set_mode true;  status ;;
+  off)       set_mode false; status ;;
+  status|"") status ;;
+  *) echo "usage: ptt on|off|status"; exit 2 ;;
+esac

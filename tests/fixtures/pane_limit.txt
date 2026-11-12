@@ -1,0 +1,11 @@
+                                                                                                                                                                                                       ┃
+ ┊  Anthropic rate-limited every one of 3 attempts — its usage limit resets in ~2h. Send /retry after that, or switch models with /model. To avoid this in future, add a backup           ▄▀▀▄▀▀▄▀▀▄   ┃
+    provider with hermes fallback add.                                                                                                                                                     ▀▀▀▀▀▀▀▀    ┃
+                                                                                                                                                                                           ▀▀▀▀▀▀▀▀    ┃
+    Provider said: HTTP 429: This request would exceed your account's rate limit. Please try again later.                                                                                  ▀▀▀▀▀▀▀▀    ┃
+                                                                                                                                                                                           ▀▀▀▀▀▀▀▀    ┃
+    Limit resets at 23:10 (in 1h 49m).                                                                                                                                                    ▀▀▀▀▀▀▀▀▀▀   ┃
+                                                                                                                                                                                          ▀▀▀▀▀▀▀▀▀▀   ┃
+    This turn did not complete. Some actions may already have run; verify their effects before resending.                                                                                 ▀▀▀▀▀▀▀▀▀▀   ┃
+                                                                                                                                                                                           ▀▀▀▀▀▀▀▀
+

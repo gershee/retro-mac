@@ -1,0 +1,5 @@
+# Wake word / push-to-talk mic daemon (voice/wake_daemon.py). Optional: only for the voice loop with Hermes.
+# Hermes's own Python already has these; install them only if you run the daemon with another interpreter.
+sherpa-onnx==1.13.8
+sounddevice==0.5.6
+numpy==2.4.6

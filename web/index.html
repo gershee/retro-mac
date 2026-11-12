@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Retro Mac</title>
+<style>
+  :root { --paper:#e9e8dc; --ink:#141412; }
+  html, body { margin:0; height:100%; background:#000; overflow:hidden; }
+  body { display:flex; align-items:center; justify-content:center; }
+  #screen { position:relative; height:100vh; aspect-ratio:512/342; max-width:100vw; max-height:calc(100vw*342/512); }
+  canvas { width:100%; height:100%; image-rendering:pixelated; image-rendering:crisp-edges; display:block; border-radius:3% / 4.5%; }
+  #test { position:fixed; left:8px; top:8px; display:none; gap:6px; flex-wrap:wrap; max-width:60vw;
+          font:12px Menlo,monospace; z-index:5; }
+  #test button { font:inherit; padding:5px 8px; background:#222; color:#ddd; border:1px solid #555; cursor:pointer; border-radius:3px; }
+  #test button:hover { background:#333; }
+  #dbg { position:fixed; right:8px; bottom:8px; font:11px Menlo,monospace; color:#6a6; display:none; z-index:5; }
+  #tonebox { position:fixed; left:50%; bottom:14px; transform:translateX(-50%); display:flex; align-items:center; gap:10px;
+             font:11px Menlo,monospace; letter-spacing:.12em; color:#aaa; background:rgba(20,20,20,.72); padding:7px 14px;
+             border:1px solid #666; border-radius:3px; transition:opacity .4s; z-index:6; }
+  #tone { width:200px; accent-color:#9a9a9a; cursor:pointer; }
+</style>
+</head>
+<body>
+<div id="screen"><canvas id="c" width="512" height="342"></canvas></div>
+<div id="test"></div>
+<div id="dbg"></div>
+<div id="tonebox"><span>LIGHT</span><input id="tone" type="range" min="0" max="100" value="100"><span>DARK</span></div>
+<script src="panels.js"></script>
+<script src="banner.js"></script>
+<script src="windows.js"></script>
+<script src="face.js"></script>
+</body>
+</html>
