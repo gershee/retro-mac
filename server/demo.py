@@ -107,6 +107,18 @@ def house(n_displays: int, ptt_on: bool) -> dict:
             "attention": [{"t": t, "since": now - 1800} for t in ATTENTION]}
 
 
+def limits() -> dict:
+    """Sample Claude plan usage for the LIMITS window (same shape as scripts/usage_probe.py output)."""
+    now = time.time()
+    nxt = datetime.fromtimestamp(now, TZ) + timedelta(days=4)
+    week_reset = nxt.replace(hour=14, minute=0, second=0, microsecond=0).timestamp()
+    return {"ok": True, "at": int(now), "windows": [
+        {"label": "5-HOUR", "used": 62, "reset": int(now + 2 * 3600 + 17 * 60)},
+        {"label": "WEEK", "used": 34, "reset": int(week_reset)},
+        {"label": "OPUS WK", "used": 91, "reset": int(week_reset)},
+    ]}
+
+
 # A small script so the CREW panel is never empty in demo mode.
 CREW_SCRIPT = [
     ("scout", "working", "RESEARCHING"), ("maker", "working", "BUILDING"), (None, None, None),

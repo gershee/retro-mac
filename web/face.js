@@ -726,10 +726,10 @@
     if (e.key === 'Escape' && window.RetroCards && RetroCards.zoom.isOpen()) { zoomClose(); e.preventDefault(); return; }
     if (e.key === ' ' && pttOn && PTT_OK && !typingTarget(e.target)) { pttSpace(e); e.preventDefault(); return; }
     if (e.key === ' ' || e.key === 'Escape') { stopSpeech(false); e.preventDefault(); }
-    // v1.1 click-in windows: 1 TODAY 2 CREW 3 WEATHER 4 HOUSE 5 ALERTS (same key closes), <- -> cycle while open
+    // v1.1 click-in windows: 1 TODAY 2 CREW 3 WEATHER 4 HOUSE 5 ALERTS 6 LIMITS (same key closes), <- -> cycle while open
     if (RW && !e.metaKey && !e.ctrlKey && !e.altKey && !e.repeat && !typingTarget(e.target) && HOME === 'dash') {
       const now = performance.now();
-      if (/^[1-5]$/.test(e.key)) {
+      if (/^[1-6]$/.test(e.key)) {
         if (S.playing || S.queue.length || S.mix < 0.99) return;          // the face owns the screen while it talks
         const key = RW.ORDER[+e.key - 1], src = { today: 'agenda', crew: 'crew', weather: 'weather' }[key];
         RW.toggle(key, hitRects.find(h => h.key === src) || null, now); busyUntil = now + 400; lastDraw = 0;

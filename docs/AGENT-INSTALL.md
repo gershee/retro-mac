@@ -24,7 +24,7 @@ Steps:
 7. Restart the server without --demo and check /health plus the page.
 8. If I use Hermes: link hermes-plugin/retro_mac_face into my Hermes plugins folder (and each profile I want a face for), add `retro_mac_face` to `plugins.enabled` in the matching config.yaml (back it up first), then ask me before restarting the gateway. Verify by sending the agent a message and checking that the CREW panel shows it working.
 9. Optional, only if I said yes: push-to-talk / voice loop (voice/voice-session.sh, voice/wake_daemon.py, `scripts/ptt on`), the full-screen kiosk (`scripts/kiosk.sh`), and auto-start (`scripts/install-autostart.sh`, macOS; it must be run from a normal Terminal window, so give me the exact command if you can't).
-10. Finish with `scripts/doctor.sh`, then give me a short summary: what's running, the keys (Space to talk, 1-5 for windows, Esc to stop), how to stop it, and how to uninstall.
+10. Finish with `scripts/doctor.sh`, then give me a short summary: what's running, the keys (Space to talk, 1-6 for windows, Esc to stop), how to stop it, and how to uninstall.
 ```
 
 ---

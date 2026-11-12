@@ -34,6 +34,13 @@ services = [
 ]
 audit_dir = ""         # optional folder with a nightly audit's last-run.json (+ ALERT.txt)
 
+[limits]
+# Optional: Claude usage window (key 6), requires Hermes signed in to Claude (OAuth subscription login).
+# The Hermes venv python that runs scripts/usage_probe.py. "" = the window says NOT CONFIGURED.
+# Env RETRO_MAC_HERMES_PYTHON overrides. The probe reads the [hermes].home profile's login.
+python = ""            # e.g. "~/.hermes/hermes-agent/venv/bin/python"
+provider = "anthropic"
+
 [voices]
 # Piper voices per agent (scripts/fetch-models.sh downloads these three). Missing voice = beep-speak fallback.
 dir = "voices"

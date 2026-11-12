@@ -1742,6 +1742,63 @@ async def handle_house(request: web.Request):
     return web.json_response(house_cache["data"], headers={"Cache-Control": "no-store"})
 
 
+# ----------------------------------------------------------------------- limits (LIMITS window, key 6)
+# GET /limits: Claude subscription usage (5-hour / weekly windows). Optional, needs Hermes signed in to Claude.
+# scripts/usage_probe.py runs under the Hermes venv python ([limits].python) and imports agent.account_usage; this
+# server never imports Hermes. One provider call per LIMITS_TTL; a failed probe keeps serving the last good reading
+# marked stale, and retries after LIMITS_RETRY.
+USAGE_PROBE = ROOT / "scripts" / "usage_probe.py"
+LIMITS_TTL, LIMITS_RETRY, LIMITS_TIMEOUT = 300.0, 60.0, 20.0
+limits_cache = {"tried": 0.0, "good": None, "error": ""}
+limits_lock = asyncio.Lock()
+
+
+async def run_usage_probe() -> dict:
+    if DEMO:
+        import demo
+        return demo.limits()
+    py = config.HERMES_PYTHON
+    if not (py and py.exists() and USAGE_PROBE.exists()):
+        return {"ok": False, "error": "not configured"}
+    p = await asyncio.create_subprocess_exec(
+        str(py), str(USAGE_PROBE), "--provider", config.LIMITS_PROVIDER, stdin=asyncio.subprocess.DEVNULL,
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+        env={**os.environ, "HERMES_HOME": str(config.HERMES_HOME)})
+    try:
+        out, _ = await asyncio.wait_for(p.communicate(), LIMITS_TIMEOUT)
+    except asyncio.TimeoutError:
+        p.kill()
+        await p.wait()
+        return {"ok": False, "error": "usage check timed out"}
+    try:
+        d = json.loads(out.decode("utf-8", "replace").strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        return {"ok": False, "error": f"probe gave no answer (exit {p.returncode})"}
+    return d if isinstance(d, dict) else {"ok": False, "error": "bad probe output"}
+
+
+async def handle_limits(request: web.Request):
+    async with limits_lock:
+        now = time.time()
+        wait = LIMITS_TTL if limits_cache["good"] and not limits_cache["error"] else LIMITS_RETRY
+        if now - limits_cache["tried"] > wait:
+            limits_cache["tried"] = now
+            try:
+                d = await run_usage_probe()
+            except Exception as e:
+                log.exception("usage probe")
+                d = {"ok": False, "error": str(e)[:80]}
+            if d.get("ok"):
+                limits_cache["good"], limits_cache["error"] = d, ""
+            else:
+                limits_cache["error"] = str(d.get("error") or "unavailable")[:80]
+                if limits_cache["error"] == "not configured":
+                    limits_cache["good"] = None
+        good, err = limits_cache["good"], limits_cache["error"]
+    body = {**good, "stale": bool(err), **({"error": err} if err else {})} if good else {"ok": False, "error": err}
+    return web.json_response(body, headers={"Cache-Control": "no-store"})
+
+
 async def handle_index(request: web.Request):
     # Stamp script/style URLs with the current web build so a reload after an edit always fetches the new
     # files (without this, Chrome kept serving a stale panels.js from its heuristic cache).
@@ -1757,6 +1814,7 @@ def make_app() -> web.Application:
     app.router.add_get("/ws", handle_ws)
     app.router.add_get("/health", handle_health)
     app.router.add_get("/house", handle_house)
+    app.router.add_get("/limits", handle_limits)
     app.router.add_post("/speak", handle_speak)
     app.router.add_post("/event", handle_event)
     app.router.add_post("/attention", handle_attention)
@@ -1782,7 +1840,7 @@ def make_app() -> web.Application:
 # data/logs/server.log rotates at 2 MB x 3 (launchd never rotates). start.sh / launchd send raw stdout+stderr
 # (startup crashes only) to server.out, so nothing else holds server.log open across a rotation.
 LOG_FILE = config.LOG_DIR / "server.log"
-QUIET_PATHS = ('"GET /health', '"POST /level', '"POST /activity', '"GET /house')   # polled every few seconds
+QUIET_PATHS = ('"GET /health', '"POST /level', '"POST /activity', '"GET /house', '"GET /limits')   # polled every few seconds
 
 
 class QuietAccess(logging.Filter):

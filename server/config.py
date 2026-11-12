@@ -61,6 +61,13 @@ DEFAULTS = {
         # Optional directory with a nightly audit's last-run.json / ALERT.txt (leave empty to hide the row)
         "audit_dir": "",
     },
+    "limits": {
+        # Optional LIMITS window (key 6): Claude subscription usage, read through Hermes (signed in to Claude).
+        # The Hermes venv python that runs scripts/usage_probe.py, e.g. "~/.hermes/hermes-agent/venv/bin/python".
+        # "" = the window says NOT CONFIGURED.
+        "python": "",
+        "provider": "anthropic",
+    },
     "voices": {
         "dir": "voices",
         "alfred": "en_GB-alan-medium.onnx",
@@ -91,6 +98,8 @@ def load() -> dict:
         cfg["server"]["demo"] = True
     if env.get("HERMES_HOME"):
         cfg["hermes"]["home"] = env["HERMES_HOME"]
+    if env.get("RETRO_MAC_HERMES_PYTHON"):
+        cfg["limits"]["python"] = env["RETRO_MAC_HERMES_PYTHON"]
     if not cfg["location"].get("timezone"):
         cfg["location"]["timezone"] = _local_tz_name()
     return cfg
@@ -102,6 +111,8 @@ PORT = int(CFG["server"]["port"])
 TZ_NAME = CFG["location"]["timezone"]
 HERMES_HOME = _expand(CFG["hermes"]["home"])
 VOICE_SESSION = CFG["hermes"]["voice_session"]
+HERMES_PYTHON = _expand(CFG["limits"]["python"]) if CFG["limits"].get("python") else None
+LIMITS_PROVIDER = str(CFG["limits"].get("provider") or "anthropic")
 # Runtime state (settings.json, attention.json, logs). Never committed.
 DATA_DIR = _expand(os.environ.get("RETRO_MAC_DATA") or ROOT / "data")
 DATA_DIR.mkdir(parents=True, exist_ok=True)

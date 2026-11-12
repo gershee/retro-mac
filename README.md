@@ -33,7 +33,7 @@ The [full prompt](docs/AGENT-INSTALL.md) walks the agent through the demo, your 
 - **Push-to-talk.** Tap Space to talk and tap it again to send. Tapping Space while a face is speaking interrupts it. A status banner shows LISTENING → GOT IT → WORKING → SPEAKING, with a live checklist of the agent's tool steps narrated in plain English. An optional wake-word daemon ([sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) keyword spotting) is also included.
 - **Crew activity panel.** It shows who is thinking, working or idle, and on what. It is fed live by Hermes plugin hooks. Only short verbs and file names are sent, never command text or file contents.
 - **Dashboard.** Weather from [Open-Meteo](https://open-meteo.com) (free, no key) with "umbrella / light jacket" advice, today's agenda from any calendar command you plug in, Hermes cron reminders, and an attention list.
-- **Classic-Mac click-in windows.** Press keys 1-5 or click a panel to zoom open TODAY, CREW, WEATHER, HOUSE (local service health) and ALERTS. They use the 1984 zoom-rect animation.
+- **Classic-Mac click-in windows.** Press keys 1-6 or click a panel to zoom open TODAY, CREW, WEATHER, HOUSE (local service health), ALERTS and LIMITS (optional Claude plan usage). They use the 1984 zoom-rect animation.
 - **Themes.** Green, amber, cyan, mono and paper phosphor themes, plus a light/dark tone slider. Scanlines are included.
 - **Built for a kiosk.** It runs full-screen in Chrome, auto-starts with launchd, keeps the display awake, and includes a `doctor.sh` health check.
 
@@ -109,7 +109,7 @@ Use a different port: `RETRO_MAC_PORT=8797 ./start.sh --demo`. Stop the server w
 |---|---|
 | Space | push-to-talk (tap = talk, tap = send); while a face speaks: stop it |
 | Esc | stop speech / close window |
-| 1-5 | open TODAY, CREW, WEATHER, HOUSE, ALERTS (press again to close) |
+| 1-6 | open TODAY, CREW, WEATHER, HOUSE, ALERTS, LIMITS (press again to close) |
 | ← → | cycle windows |
 | T | cycle theme |
 | [ ] | tone darker / lighter |
@@ -135,6 +135,17 @@ Use a different port: `RETRO_MAC_PORT=8797 ./start.sh --demo`. Stop the server w
 5. **Kiosk.** `./start.sh`, then `scripts/kiosk.sh`. This opens full-screen Chrome with its own profile under `data/` and keeps the display awake. Exit with Cmd+Q.
 6. **Auto-start (macOS).** `scripts/install-autostart.sh` installs launchd agents for the server, voice session, wake daemon and kiosk. Use `--no-voice` for display only and `--uninstall` to remove them.
 7. **Health check.** Run `scripts/doctor.sh`.
+
+### Optional: Claude usage window, requires Hermes
+
+Key 6 opens LIMITS: how much of your Claude subscription's 5-hour session window and weekly window(s) is used, what is left, and when each resets (local time). It needs Hermes signed in to Claude with a subscription (OAuth) login. Point `[limits].python` in `config.toml` at the Hermes venv python:
+
+```toml
+[limits]
+python = "~/.hermes/hermes-agent/venv/bin/python"
+```
+
+The server runs `scripts/usage_probe.py` with that interpreter (it imports Hermes' `agent.account_usage`; the display server itself never imports Hermes), at most once every 5 minutes and only while the window is open. The probe prints labels, percentages and reset times as JSON, never a token. Check it by hand with `~/.hermes/hermes-agent/venv/bin/python scripts/usage_probe.py`. Unset, the window says NOT CONFIGURED; demo mode shows sample numbers.
 
 ## Keys and accounts
 
@@ -183,7 +194,7 @@ server/          aiohttp display server (server.py), feeds, config, demo data
 web/             canvas front end: face.js (faces, moods, lip-sync), panels.js, windows.js, banner.js
 hermes-plugin/   retro_mac_face Hermes plugin (hooks -> display)
 voice/           wake/push-to-talk mic daemon, Hermes voice tmux session, whisper helper
-scripts/         kiosk, ptt, say, demo tour, fetch-models, autostart, doctor
+scripts/         kiosk, ptt, say, demo tour, fetch-models, autostart, doctor, usage probe
 examples/        launchd plist templates
 tests/           silent spare-port tests (no speakers, no model calls)
 docs/media/      screenshots and the demo GIF

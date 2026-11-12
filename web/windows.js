@@ -1,23 +1,24 @@
 // Retro Mac v1.1: click-in detail windows over the (unchanged) v1 dashboard.
 // Classic-Mac window (striped title bar, close box, dither shadow, ~150 ms zoom-open) drawn black-on-white in v1's
 // Menlo; face.js thresholds the frame to 1-bit and maps it to the active theme + tone, so windows are always native.
-//   open:  click the WEATHER / TODAY / CREW panel, or keys 1 TODAY  2 CREW  3 WEATHER  4 HOUSE  5 ALERTS
+//   open:  click the WEATHER / TODAY / CREW panel, or keys 1 TODAY  2 CREW  3 WEATHER  4 HOUSE  5 ALERTS  6 LIMITS
 //          (same key again closes, <- -> cycle while open)
 //   close: Esc, the close box, a click outside the window, or 60 s without input
 // Voice always wins: speech (face goes full screen) closes the window; the voice banner draws on top and the window
 // dims underneath while HEARD / LISTENING / WORKING (its idle timer is paused meanwhile).
-// Data: dash (ws: weather, agenda, day), crew (ws: status, since, last, hist) and GET /house (read-only, 60 s cache).
+// Data: dash (ws: weather, agenda, day), crew (ws: status, since, last, hist), GET /house (read-only, 60 s cache), GET /limits.
 (function () {
   const W = 512, H = 342;
   const MONO = 'Menlo, "Courier New", monospace';
   const font = (px, bold) => `${bold ? 'bold ' : ''}${px}px ${MONO}`;
   const WIN = { x: 10, y: 6, w: 486, h: 316, titleH: 20 };
   const OPEN_MS = 150, CLOSE_MS = 120, IDLE_MS = 60e3;
-  const ORDER = ['today', 'crew', 'weather', 'house', 'alerts'];
-  const TAB = { today: 'TODAY', crew: 'CREW', weather: 'WEATHER', house: 'HOUSE', alerts: 'ALERTS' };
+  const ORDER = ['today', 'crew', 'weather', 'house', 'alerts', 'limits'];
+  const TAB = { today: 'TODAY', crew: 'CREW', weather: 'WEATHER', house: 'HOUSE', alerts: 'ALERTS', limits: 'LIMITS' };
   const DIM_STATES = new Set(['heard', 'listening', 'transcribing', 'working', 'error', 'failed']);
   const Z = { key: null, from: null, at: 0, closing: false, touched: 0, closeKey: null };
   let house = null, houseTry = 0;
+  let limits = null, limitsTry = 0;              // GET /limits (Claude plan usage), only while LIMITS is open
   const debug = { opens: 0, closes: 0, lastClose: '' };
 
   // ------------------------------------------------------------------ helpers
@@ -100,6 +101,12 @@
     return out;
   }
   function houseDown() { return house ? (house.services || []).filter(s => !s.up).length : 0; }
+  function fetchLimits() {
+    limitsTry = Date.now();
+    fetch('/limits', { cache: 'no-store' }).then(r => r.json()).then(j => { if (j && typeof j.ok === 'boolean') limits = j; })
+      .catch(() => { if (!limits) limits = { ok: false, error: 'kiosk server unreachable' }; });
+  }
+  function limitsTick() { if (Z.key === 'limits' && !Z.closing && Date.now() - limitsTry > 60e3) fetchLimits(); }
 
   // ------------------------------------------------------------------ chrome
   function chrome(ctx, r, title, t) {
@@ -134,9 +141,10 @@
     }
     blk(ctx); ctx.font = font(10, true);
     const room = x - x0 - 10;
-    const hw = ctx.measureText(hint).width;
-    if (hw <= room) {                                    // keycap plate around SPACE / the hint
-      box(ctx, x0, y - 1, hw + 10, 13, 1); ctx.fillText(hint, x0 + 5, y + 1);
+    const alts = D.ptt ? [hint, 'SPACE = ASK ME'] : [hint, 'SAY ALFRED = ASK'];   // short form once 6 tabs crowd it
+    const fits = alts.find(s => ctx.measureText(s).width <= room);
+    if (fits) {                                          // keycap plate around SPACE / the hint
+      box(ctx, x0, y - 1, ctx.measureText(fits).width + 10, 13, 1); ctx.fillText(fits, x0 + 5, y + 1);
     } else ctx.fillText(fit(ctx, hint, room), x0, y + 1);
   }
 
@@ -468,6 +476,58 @@
     }
   }
 
+  // ------------------------------------------------------------------ LIMITS
+  const LIM_NOTE = { '5-HOUR': 'ROLLING SESSION', WEEK: 'ALL MODELS', 'OPUS WK': 'OPUS ONLY', 'SONNET WK': 'SONNET ONLY' };
+  const DOW = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+  function resetAt(ms) {                         // "4:30P" today, "TUE 2P" / "TUE 2:30P" another day (server time)
+    if (RT.sameDay(ms, Date.now())) return clock(ms);
+    const p = RT.parts(ms);
+    return `${DOW[p.dow]} ${p.m ? clock(ms) : hr(ms)}`;
+  }
+  const limRows = () => (limits && limits.ok && Array.isArray(limits.windows) ? limits.windows : []);
+  const limDur = (sec) => (sec >= 48 * 3600 ? `${Math.floor(sec / 86400)}D ${Math.floor(sec / 3600) % 24}H` : dur(sec));
+  function drawLimits(ctx, c, D, t) {
+    blk(ctx);
+    if (!limits) { text(ctx, 'CHECKING LIMITS..', c.x, c.y + 4, 14, true); return; }
+    const rows = limRows();
+    if (!rows.length) {
+      const cx = c.x + c.w / 2, cy = c.y + c.h / 2 - 40, nc = limits.error === 'not configured';
+      box(ctx, cx - 16, cy - 18, 32, 26, 2); text(ctx, '?', cx, cy - 13, 18, true, 'c');
+      text(ctx, nc ? 'NOT CONFIGURED' : 'LIMITS UNAVAILABLE', cx, cy + 20, 24, true, 'c');
+      ctx.font = font(12, false); let yy = cy + 56;
+      const msg = nc ? 'THE CLAUDE USAGE WINDOW NEEDS HERMES' : String(limits.error || 'NO ANSWER').toUpperCase();
+      for (const l of wrap(ctx, msg, c.w - 60, 2)) { text(ctx, l, cx, yy, 12, false, 'c'); yy += 15; }
+      return;
+    }
+    const at = (limits.at || 0) * 1000, stale = Date.now() - at > 10 * 60e3;
+    text(ctx, 'CLAUDE PLAN USAGE', c.x, c.y, 11, true);
+    if (stale) { ctx.font = font(10, true); const s = `AS OF ${clock(at)}`, w = ctx.measureText(s).width;
+      ctx.fillRect(c.x + c.w - w - 6, c.y - 2, w + 6, 14); wht(ctx); text(ctx, s, c.x + c.w - 3, c.y, 10, true, 'r'); blk(ctx); }
+    else text(ctx, `CHECKED ${clock(at)}`, c.x + c.w, c.y, 10, false, 'r');
+    let y = c.y + 20;
+    const RH = Math.min(56, Math.floor((c.h - 44) / Math.max(1, rows.length))), BW = c.w - 104;
+    rows.forEach((r, i) => {
+      const used = Math.max(0, Math.min(100, Math.round(r.used || 0))), left = 100 - used, rs = r.reset ? r.reset * 1000 : null;
+      blk(ctx);
+      const lw = text(ctx, r.label, c.x, y, 16, true);
+      if (LIM_NOTE[r.label]) text(ctx, LIM_NOTE[r.label], c.x + lw + 10, y + 5, 10, false);
+      if (rs) text(ctx, `RESETS ${resetAt(rs)}`, c.x + c.w, y + 3, 11, true, 'r');
+      box(ctx, c.x, y + 21, BW, 16, 2);
+      if (used) ctx.fillRect(c.x + 3, y + 24, Math.round((BW - 6) * used / 100), 10);
+      ctx.font = font(14, true); const ls = `${left}% LEFT`, lsw = ctx.measureText(ls).width;
+      if (left <= 10) { ctx.fillRect(c.x + c.w - lsw - 8, y + 20, lsw + 8, 18); wht(ctx); }
+      text(ctx, ls, c.x + c.w - 4, y + 22, 14, true, 'r'); blk(ctx);
+      text(ctx, `${used}% USED`, c.x, y + 40, 10, false);
+      if (rs) text(ctx, rs > Date.now() ? `IN ${limDur((rs - Date.now()) / 1000)}` : 'RESETTING', c.x + BW, y + 40, 10, false, 'r');
+      if (i < rows.length - 1) dots(ctx, c.x, y + RH - 5, c.w);
+      y += RH;
+    });
+    const by = c.y + c.h - 12;
+    blk(ctx); dots(ctx, c.x, by - 5, c.w);
+    ctx.font = font(10, false); ctx.textBaseline = 'top';
+    ctx.fillText(fit(ctx, limits.stale ? 'BAR = USED \u00b7 LAST CHECK FAILED, SHOWING THE LAST GOOD READING' : 'BAR = USED \u00b7 YOUR CLAUDE LOGIN VIA HERMES \u00b7 RECHECKS EVERY 5 MIN', c.w), c.x, by + 1);
+  }
+
   // ------------------------------------------------------------------ titles
   function titleOf(key, D) {
     if (key === 'today') return 'TODAY' + (D.day && D.day.date ? ' - ' + D.day.date : '');
@@ -475,9 +535,11 @@
     if (key === 'weather') { const a = D.weather ? RT.asOf(D.weather.at) : '';
       return 'WEATHER' + (D.weather && D.weather.place ? ' - ' + D.weather.place : '') + (a ? ' - ' + a : ''); }
     if (key === 'house') { if (!house) return 'HOUSE - CHECKING..'; const n = houseDown(); return n ? `HOUSE - ${n} DOWN` : 'HOUSE - ALL SYSTEMS UP'; }
+    if (key === 'limits') { if (!limits) return 'LIMITS - CHECKING..'; const r = limRows()[0];
+      return r ? `LIMITS - ${r.label} ${100 - Math.max(0, Math.min(100, Math.round(r.used || 0)))}% LEFT` : limits.error === 'not configured' ? 'LIMITS - NOT CONFIGURED' : 'LIMITS - UNAVAILABLE'; }
     const n = alertItems(D).length; return n ? `ALERTS - ${n}` : 'ALERTS - ALL QUIET';
   }
-  const BODY = { today: drawToday, crew: drawCrewWin, weather: drawWeatherWin, house: drawHouse, alerts: drawAlerts };
+  const BODY = { today: drawToday, crew: drawCrewWin, weather: drawWeatherWin, house: drawHouse, alerts: drawAlerts, limits: drawLimits };
 
   // ------------------------------------------------------------------ state machine
   const lerp = (a, b, p) => a + (b - a) * p;
@@ -485,10 +547,11 @@
   const DEFAULT_FROM = { x: 236, y: 300, w: 40, h: 20 };
   function open(key, from, t) {
     if (!BODY[key]) return;
-    if (Z.key && !Z.closing) { Z.key = key; Z.touched = t; debug.opens++; if (key === 'house' || key === 'alerts') fetchHouse(); return; }   // switch: instant
+    if (Z.key && !Z.closing) { Z.key = key; Z.touched = t; debug.opens++; if (key === 'house' || key === 'alerts') fetchHouse(); if (key === 'limits') fetchLimits(); return; }   // switch: instant
     Object.assign(Z, { key, from: from ? { x: from.x, y: from.y, w: from.w, h: from.h } : DEFAULT_FROM, at: t, closing: false, touched: t });
     debug.opens++;
     if (key === 'house' || key === 'alerts' || Date.now() - houseTry > 60e3) fetchHouse();
+    if (key === 'limits') fetchLimits();
   }
   function close(t, why) { if (Z.key && !Z.closing) { Z.closing = true; Z.at = t; Z.closeKey = Z.key; debug.closes++; debug.lastClose = why || 'close'; } }
   function reset(why) { if (Z.key) { debug.closes++; debug.lastClose = why || 'reset'; } Z.key = null; Z.closing = false; }
@@ -506,6 +569,7 @@
   // D = { weather, agenda, day, crew, ptt }
   function draw(ctx, D, t) {
     houseTick();
+    limitsTick();
     if (!Z.key) return;
     const vs = window.RetroBanner ? RetroBanner.state().state : 'idle', dim = DIM_STATES.has(vs);
     if (dim) Z.touched = t;                                  // voice turn in progress: never idle-close under it
@@ -539,7 +603,7 @@
     }
   }
 
-  // Key legend in the 18 px strip under the panels (y 327): "1 TODAY  2 CREW  3 WEATHER  4 HOUSE  5 ALERTS", clickable.
+  // Key legend in the 18 px strip under the panels (y 327): "1 TODAY  2 CREW  3 WEATHER  4 HOUSE  5 ALERTS  6 LIMITS", clickable.
   // Carries the HOUSE N! marker (replaces the old plate) and the alert count. Abbreviates to fit left of the PTT tag.
   let LEG = [];
   function legend(ctx, o) {
