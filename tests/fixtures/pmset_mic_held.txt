@@ -1,0 +1,23 @@
+2026-11-12 11:20:25 -0500 
+Assertion status system-wide:
+   BackgroundTask                 0
+   ApplePushServiceTask           0
+   UserIsActive                   0
+   PreventUserIdleDisplaySleep    1
+   PreventSystemSleep             0
+   ExternalMedia                  0
+   PreventUserIdleSystemSleep     1
+   NetworkClientActive            0
+Listed by owning process:
+   pid 4321(caffeinate): [0x0031f671000192dd] 03:15:04 PreventUserIdleSystemSleep named: "caffeinate command-line tool"  
+	Details: caffeinate asserting on behalf of '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' (pid 4300)
+	Localized=THE CAFFEINATE TOOL IS PREVENTING SLEEP.
+   pid 4321(caffeinate): [0x0031f671000592de] 03:15:04 PreventUserIdleDisplaySleep named: "caffeinate command-line tool"  
+	Details: caffeinate asserting on behalf of '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' (pid 4300)
+	Localized=THE CAFFEINATE TOOL IS PREVENTING SLEEP.
+   pid 200(coreaudiod): [0x0032034f00019f17] 02:13:10 PreventUserIdleSystemSleep named: "com.apple.audio.AppleHDAEngineInput:1F,3,0,1,0:1.context.preventuseridlesleep"  
+	Created for PID: 12345. 
+   pid 200(coreaudiod): [0x0032034f00019f18] 00:00:41 PreventUserIdleSystemSleep named: "com.apple.audio.AppleHDAEngineOutput:1F,3,0,1,0:0.context.preventuseridlesleep"  
+	Created for PID: 4300. 
+No kernel assertions.
+Idle sleep preventers: IODisplayWrangler

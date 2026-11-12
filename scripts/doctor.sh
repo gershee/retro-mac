@@ -238,6 +238,25 @@ else
   fail "wake.log: missing"
 fi
 
+# who really holds the mic input (macOS CoreAudio power assertion via pmset; skipped on Linux). wake.log only says what
+# the daemon meant to do: another process (e.g. a voice turn that died mid-recording) can keep the device open.
+if [ -n "$H" ] && [ "$(uname)" = Darwin ]; then
+  VIDLE=$(printf '%s' "$H" | /usr/bin/env python3 -c 'import sys, json
+try:
+    v = json.load(sys.stdin).get("voice") or {}
+    print(1 if v.get("state") in ("idle", "done") and not v.get("turn") else 0)
+except Exception:
+    print(0)' 2>/dev/null)
+  if [ "$VIDLE" = 1 ]; then
+    EXCL=""; [ "$PTT_ON" = 1 ] || EXCL=$(pgrep -f 'voice/wake_daemon.py' | head -1)   # wake word on: the daemon may listen
+    HELDBY=$(/usr/bin/env python3 "$R/server/micprobe.py" --exclude $EXCL 2>/dev/null | head -1)
+    if [ -n "$HELDBY" ]; then
+      HPID=${HELDBY%% *}; HFOR=${HELDBY#* }; HCOMM=$(ps -o comm= -p "$HPID" 2>/dev/null); HCOMM=${HCOMM##*/}
+      fail "mic: MIC HELD BY PID $HPID (${HCOMM:-gone}) for $HFOR while voice is idle (a voice turn left the input open; restarting that process frees it)"
+    else ok "mic: no other process holds the mic input while voice is idle (pmset)"; fi
+  fi
+fi
+
 # server.log tracebacks
 if [ -f "$SL" ]; then
   if tail -n 200 "$SL" | grep -q 'Traceback'; then fail "server.log: Traceback in last 200 lines"; else ok "server.log: no Traceback in last 200 lines"; fi

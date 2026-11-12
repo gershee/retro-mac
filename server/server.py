@@ -42,6 +42,7 @@ from aiohttp import web, WSMsgType
 
 import config  # noqa: E402  (also sets up data/ and reads config.toml)
 import feeds  # noqa: E402
+import micprobe  # noqa: E402
 
 ROOT = config.ROOT
 WEB = config.WEB
@@ -1516,7 +1517,7 @@ async def handle_stop(request: web.Request):
 # ----------------------------------------------------------------------- house (v1.1)
 # GET /house: read-only status probes for the HOUSE / ALERTS click-in windows. Cached HOUSE_TTL seconds, computed
 # in a worker thread. No secrets, nothing written anywhere: gateway_state.json, nightly last-run.json, cron jobs.json,
-# wake.log, two localhost HTTP probes, statvfs and `launchctl list`.
+# wake.log, two localhost HTTP probes, statvfs, `launchctl list` and `pmset -g assertions` (who holds the mic).
 HOUSE_TTL = 60.0
 house_cache = {"at": 0.0, "data": None}
 house_lock = asyncio.Lock()
@@ -1582,7 +1583,7 @@ def _log_ts(line: str):
         return None
 
 
-def house_snapshot(n_displays: int, ptt_on: bool, tui_state: dict) -> dict:
+def house_snapshot(n_displays: int, ptt_on: bool, tui_state: dict, voice_idle: bool = True) -> dict:
     if DEMO:
         import demo
         return demo.house(n_displays, ptt_on)
@@ -1621,6 +1622,14 @@ def house_snapshot(n_displays: int, ptt_on: bool, tui_state: dict) -> dict:
         mic = {"ptt": False, "open": peak_age < 90, "note": "WAKE WORD ON, MIC LIVE" if peak_age < 90 else "MIC SILENT"}
         wnote = "LISTENING" if wk_up and peak_age < 90 else ("STALLED" if wk_up else "NOT RUNNING")
     svc.append({"name": "WAKE / MIC", "up": wk_up and (ptt_on or peak_age < 90), "note": wnote})
+    # The logs above say what the wake daemon meant to do; CoreAudio says who really has the mic open (macOS only).
+    # Voice idle -> nobody should hold it, except the wake daemon itself while the wake word is on.
+    if voice_idle and (not ptt_on or not mic["open"]):
+        held = micprobe.mic_holders(exclude=() if ptt_on else (ld.get("com.hermes.retro-mac-wake") or "",))
+        if held:
+            pid = held[0]["pid"]
+            mic.update(open=True, held_by=pid, held_for=held[0]["for"], note=f"MIC HELD BY PID {pid}")
+            alerts.append(f"MIC HELD BY PID {pid} ({held[0]['for']}) WHILE VOICE IS IDLE")
     # disk (data volume)
     disk = None
     try:
@@ -1694,7 +1703,8 @@ async def handle_house(request: web.Request):
             loop = asyncio.get_running_loop()
             try:
                 house_cache["data"] = await loop.run_in_executor(
-                    None, house_snapshot, len(clients), bool(settings.get("ptt")), dict(tui))
+                    None, house_snapshot, len(clients), bool(settings.get("ptt")), dict(tui),
+                    voice["state"] in ("idle", "done") and not turn["t"])
                 house_cache["at"] = time.time()
             except Exception as e:
                 log.exception("house snapshot")
