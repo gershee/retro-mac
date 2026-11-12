@@ -2,7 +2,8 @@
 # Download the models Retro Mac uses. Nothing here is bundled in the repo (licenses + size); every file is
 # fetched from its upstream and checked against a pinned SHA-256.
 #
-#   scripts/fetch-models.sh            voices only (Piper, ~190 MB): real speech instead of beep-speak
+#   scripts/fetch-models.sh            voices only (Piper, ~190 MB): real speech instead of beep-speak.
+#                                      The server also needs Piper itself: venv/bin/pip install -r requirements-voice.txt
 #   scripts/fetch-models.sh --wake     + the wake-word model (sherpa-onnx KWS, ~18 MB)
 #   scripts/fetch-models.sh --stt      + Whisper base.en for Hermes speech-to-text (whisper.cpp, ~148 MB)
 #   scripts/fetch-models.sh --all      everything
@@ -53,5 +54,10 @@ fi
 if [ "$WANT_STT" = 1 ]; then
   get https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin models/ggml-base.en.bin \
       a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002
+fi
+PY=${PYTHON:-venv/bin/python}; [ -x "$PY" ] || PY=python3
+if ! "$PY" -c 'import piper' 2>/dev/null; then
+  echo "note: piper-tts is not installed for $PY, so the server will still beep-speak."
+  echo "      install it: venv/bin/pip install -r requirements-voice.txt"
 fi
 echo "done. Restart the server to load the voices."

@@ -241,7 +241,8 @@ def load_voices():
     try:
         from piper import PiperVoice
     except Exception as e:  # pragma: no cover
-        log.warning("piper-tts not importable (%s): every agent will beep-speak", e)
+        log.warning("piper-tts not importable (%s): every agent will beep-speak. Real voices: "
+                    "pip install -r requirements-voice.txt && scripts/fetch-models.sh", e)
         return
     for agent, fname in VOICE_FILES.items():
         path = VOICES_DIR / fname

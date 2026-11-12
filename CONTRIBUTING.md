@@ -2,7 +2,7 @@
 
 Issues and PRs are welcome, especially new faces and moods, Raspberry Pi / systemd support, and calendar adapters.
 
-1. Set up a dev environment: `python3 -m venv venv && venv/bin/pip install -r requirements.txt`, then `./start.sh --demo`.
+1. Set up a dev environment: `python3 -m venv venv && venv/bin/pip install -r requirements.txt`, then `./start.sh --demo` (add `requirements-voice.txt` only to work on Piper voices). Run every test with `venv/bin/python tests/run_all.py`.
 2. Work on a spare port so you never disturb a running kiosk: `RETRO_MAC_PORT=8797 ./start.sh --demo --fg`.
 3. Front-end changes: open `/?test` for the test buttons and preview params (`agent`, `mood`, `hour`, `idle`, `theme`, `tone`). The page reloads itself when the web files change.
 4. Run the tests in `tests/` before you open a PR (see ARCHITECTURE.md). They are silent and use spare ports.

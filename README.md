@@ -1,6 +1,6 @@
 # Retro Mac
 
-**A 1-bit vintage-Mac face for your AI agents.** One animated pixel face per agent. The faces talk with local voices and lip-sync, and the screen shows what your crew is working on. Hold Space to talk to them.
+**A 1-bit vintage-Mac face for your AI agents.** One animated pixel face per agent. The faces talk with local voices and lip-sync, and the screen shows what your crew is working on. Tap Space to talk to them.
 
 ![Retro Mac demo: crew activity, push-to-talk, a face speaking with lip-sync](docs/media/demo.gif)
 
@@ -10,7 +10,7 @@ Retro Mac is a small always-on kiosk display for [Hermes Agent](https://github.c
 - a crew panel that shows what each agent is doing right now
 - a glanceable dashboard with the weather, what to wear, today's agenda and reminders
 
-Everything runs on your own machine. The server binds to `127.0.0.1` only. Speech is synthesized locally with Piper. The mic opens only when you press Space (or, if you turn it on, when it hears the wake word).
+Everything runs on your own machine. The server binds to `127.0.0.1` only. Speech is synthesized locally with Piper. The mic opens only when you tap Space (or, if you turn it on, when it hears the wake word).
 
 You can try it in under two minutes without Hermes, Google or any API keys: `./start.sh --demo`.
 
@@ -92,7 +92,12 @@ Demo mode shows sample weather, agenda, reminders and alerts, plus a scripted cr
 - open `http://127.0.0.1:8787/?test`, click once to unlock sound, then use the test buttons, or
 - run `venv/bin/python scripts/demo-tour.py` for a scripted tour (this is what recorded the GIF above).
 
-Out of the box the faces beep-speak. For real voices, run `scripts/fetch-models.sh` (about 190 MB, SHA-256 checked) and restart the server.
+Out of the box the faces beep-speak: `requirements.txt` is just the web server (aiohttp, a few MB). For real voices, install Piper and fetch the voices, then restart the server:
+
+```bash
+venv/bin/pip install -r requirements-voice.txt    # Piper TTS + onnxruntime, about 300 MB
+scripts/fetch-models.sh                           # the three voices, about 190 MB, SHA-256 checked
+```
 
 Preview URLs: `/?test&agent=scout&mood=sleep`, `/?test&hour=3&idle=120` (fake the clock), `/?theme=amber`, `/?tone=0`.
 
@@ -113,7 +118,7 @@ Use a different port: `RETRO_MAC_PORT=8797 ./start.sh --demo`. Stop the server w
 ## Full setup with Hermes
 
 1. **Config.** `cp config.example.toml config.toml` and set your `[location]`. Optionally set a `[calendar].command` that prints events as JSON (Google Calendar API shape; see the comments in the file) and any `[house]` services to health-check. `.env.example` lists every environment override.
-2. **Voices.** Run `scripts/fetch-models.sh`. Add `--wake` for the wake-word model and `--stt` for whisper base.en.
+2. **Voices.** `venv/bin/pip install -r requirements-voice.txt` (Piper), then `scripts/fetch-models.sh`. Add `--wake` for the wake-word model and `--stt` for whisper base.en. The wake daemon's own packages are in `voice/requirements.txt`.
 3. **Plugin.** Link the plugin into each Hermes home that should drive a face and enable it:
    ```bash
    ln -s "$PWD/hermes-plugin/retro_mac_face" ~/.hermes/plugins/retro_mac_face
@@ -138,7 +143,7 @@ None are required. Weather uses Open-Meteo (no key). The calendar is whatever co
 ## Privacy
 
 - **Local only.** The server binds to `127.0.0.1`. Nothing is exposed to your network, and there is no telemetry. Requests with a foreign `Host` (DNS rebinding) are refused, and so are state-changing requests or WebSocket connections from another site's `Origin`.
-- **The mic is opt-in.** In push-to-talk mode the wake daemon does not hold the microphone while idle. It opens the mic only after you press Space. On macOS the HOUSE window and `doctor.sh` also ask CoreAudio who really holds the mic input, and raise "MIC HELD BY PID n" if anything keeps it open while voice is idle.
+- **The mic is opt-in.** In push-to-talk mode the wake daemon does not hold the microphone while idle. It opens the mic only after you tap Space. On macOS the HOUSE window and `doctor.sh` also ask CoreAudio who really holds the mic input, and raise "MIC HELD BY PID n" if anything keeps it open while voice is idle.
 - **Speech stays on the machine.** TTS is Piper on your CPU. STT is whatever your Hermes is configured with (local whisper by default in this setup).
 - **Minimal crew telemetry.** The plugin sends short status verbs and file basenames to the display, never command text or file contents. Junk transcripts such as `[BLANK_AUDIO]`, "thanks for watching" and a lone "you" are dropped before any model call.
 - **Runtime state is git-ignored.** `data/`, `config.toml` and `.env` are all ignored.

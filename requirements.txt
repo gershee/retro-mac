@@ -1,23 +1,14 @@
-# Display server (Python 3.11+). Pinned to the versions the kiosk runs on.
+# Display server, core (Python 3.11+): everything demo mode and the full kiosk need. Pinned for reproducible installs.
+# Faces "beep-speak" with this alone. For real Piper voices also install requirements-voice.txt (adds ~300 MB:
+# onnxruntime, numpy, sympy) and run scripts/fetch-models.sh.
 aiohttp==3.14.5
-piper-tts==1.8.0
-# transitive (pinned for reproducible installs)
+# transitive
 aiohappyeyeballs==2.7.1
 aiosignal==1.4.0
 attrs==26.1.0
-coloredlogs==15.0.1
-flatbuffers==25.12.19
 frozenlist==1.8.0
-humanfriendly==10.0
 idna==3.20
-mpmath==1.3.0
 multidict==7.2.1
-numpy==2.4.6
-onnxruntime==1.23.2
-packaging==26.3
-pathvalidate==3.3.1
 propcache==0.5.4
-protobuf==7.36.2
-sympy==1.14.0
 typing_extensions==4.16.0
 yarl==1.25.1

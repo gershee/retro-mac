@@ -24,7 +24,8 @@ for a in "$@"; do
   esac
 done
 WAKE_PYTHON=${WAKE_PYTHON:-$(ls -d "$HOME"/.hermes/hermes-agent/venv/bin/python3 "$HOME"/.hermes/tools/python-3*/bin/python3 2>/dev/null | head -1)}
-[ -x "$REPO/venv/bin/python" ] || { echo "create the venv first: python3 -m venv venv && venv/bin/pip install -r requirements.txt" >&2; exit 1; }
+[ -x "$REPO/venv/bin/python" ] || { echo "create the venv first: python3 -m venv venv && venv/bin/pip install -r requirements.txt (+ -r requirements-voice.txt for real voices)" >&2; exit 1; }
+"$REPO/venv/bin/python" -c 'import piper' 2>/dev/null || echo "note: piper-tts is not in the venv, so the faces will beep-speak (real voices: venv/bin/pip install -r requirements-voice.txt && scripts/fetch-models.sh)"
 case " $LABELS " in *" wake "*) [ -x "$WAKE_PYTHON" ] || { echo "no python for the wake daemon (set WAKE_PYTHON or use --no-voice)" >&2; exit 1; } ;; esac
 chmod +x "$REPO"/voice/voice-session.sh "$REPO"/scripts/*.sh "$REPO"/start.sh
 mkdir -p "$LA" "$REPO/data/logs"
