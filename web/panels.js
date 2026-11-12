@@ -45,7 +45,7 @@
   function layout(hasTile) {
     const weather = { x: COLX, y: 18, w: COLW, h: 126, titleH: 18 };
     const tile = hasTile ? { x: COLX, y: 150, w: COLW, h: 46, titleH: 16 } : null;
-    const ay = hasTile ? 202 : 150;   // weather is 126 tall so a third advice line clears its border
+    const ay = hasTile ? 202 : 150;   // weather is 126 tall so a third advice line (incl. descenders) clears its border
     const agenda = { x: COLX, y: ay, w: COLW, h: 324 - ay, titleH: 18 };
     return { weather, tile, agenda };
   }

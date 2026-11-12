@@ -1063,7 +1063,10 @@ async def guard(request: web.Request, handler):
         log.warning("blocked %s %s from foreign Origin %r", request.method, request.path,
                     request.headers.get("Origin", "")[:60])
         return web.json_response({"ok": False, "error": "bad origin"}, status=403)
-    return await handler(request)
+    resp = await handler(request)
+    if request.method in ("GET", "HEAD") and request.path.endswith((".js", ".css", ".html", ".ico")):
+        resp.headers.setdefault("Cache-Control", "no-cache")   # revalidate web files (cheap: ETag), never run stale code
+    return resp
 
 
 async def handle_speak(request: web.Request):
@@ -1740,7 +1743,12 @@ async def handle_house(request: web.Request):
 
 
 async def handle_index(request: web.Request):
-    return web.FileResponse(WEB / "index.html", headers={"Cache-Control": "no-store"})
+    # Stamp script/style URLs with the current web build so a reload after an edit always fetches the new
+    # files (without this, Chrome kept serving a stale panels.js from its heuristic cache).
+    html = (WEB / "index.html").read_text()
+    b = web_build()
+    html = re.sub(r'(src|href)="([\w./-]+\.(?:js|css))"', lambda m: f'{m.group(1)}="{m.group(2)}?v={b}"', html)
+    return web.Response(text=html, content_type="text/html", headers={"Cache-Control": "no-store"})
 
 
 def make_app() -> web.Application:
