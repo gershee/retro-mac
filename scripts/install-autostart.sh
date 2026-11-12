@@ -3,7 +3,8 @@
 #   server         display server (KeepAlive)
 #   voice-session  `hermes --tui` in tmux with voice mode on      (skip with --no-voice)
 #   wake           wake word / push-to-talk mic daemon            (skip with --no-voice)
-#   kiosk          full-screen Chrome kiosk
+#   kiosk          full-screen Chrome kiosk (KeepAlive on crash; Cmd+Q stays quit,
+#                  bring it back with: launchctl kickstart gui/$(id -u)/com.hermes.retro-mac-kiosk)
 # Run from Terminal.app (not from inside a Hermes session). Safe to re-run. The first time the wake daemon runs
 # under launchd, macOS asks to let python use the microphone: click Allow.
 #   WAKE_PYTHON=/path/to/python  python with sherpa-onnx + sounddevice (default: Hermes's venv python)

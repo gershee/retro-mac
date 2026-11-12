@@ -13,5 +13,6 @@ exec /usr/bin/caffeinate -d -i "$CHROME" \
   --kiosk --app="$URL" \
   --autoplay-policy=no-user-gesture-required \
   --no-first-run --no-default-browser-check --disable-features=Translate,InfiniteSessionRestore \
+  --disable-session-crashed-bubble --noerrdialogs \
   --hide-scrollbars --overscroll-history-navigation=0 \
   ${RETRO_DEBUG_PORT:+--remote-debugging-port=$RETRO_DEBUG_PORT}
