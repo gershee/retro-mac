@@ -37,6 +37,20 @@ WMO = {
 }
 
 
+def _now() -> datetime:
+    """The clock every feed uses (tests replace it with a fixed time)."""
+    return datetime.now(TZ)
+
+
+def _day_prefix(dt: datetime, today) -> str:
+    """Agenda day label, one rule for events and reminders: today -> "", tomorrow -> "TMR ", later -> "SAT "."""
+    if dt.date() == today:
+        return ""
+    if dt.date() == today + timedelta(days=1):
+        return "TMR "
+    return dt.strftime("%a ").upper()
+
+
 def _hr(dt: datetime) -> str:
     h = dt.hour % 12 or 12
     return f"{h}{'A' if dt.hour < 12 else 'P'}"
@@ -63,7 +77,7 @@ def get_weather() -> dict:
     with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "retro-mac"}), timeout=15) as r:
         d = json.load(r)
     cur, hr, day = d["current"], d["hourly"], d["daily"]
-    now = datetime.now(TZ).replace(minute=0, second=0, microsecond=0)
+    now = _now().replace(minute=0, second=0, microsecond=0)
     times = [datetime.fromisoformat(t).replace(tzinfo=TZ) for t in hr["time"]]
     start = next((i for i, t in enumerate(times) if t >= now), 0)
     # look ahead through tomorrow noon (at least 18h) so tomorrow's school-run weather is caught
@@ -186,7 +200,7 @@ def fetch_events() -> list:
         return demo.events()
     if not CAL_COMMAND:
         return []
-    now = datetime.now(TZ)
+    now = _now()
     start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     end = start + timedelta(days=2)
     events, seen = [], set()
@@ -224,7 +238,7 @@ def load_reminders() -> list:
         jobs = d["jobs"] if isinstance(d, dict) else d
     except Exception:
         return []
-    now = datetime.now(TZ)
+    now = _now()
     out = []
     for j in jobs:
         sched = j.get("schedule") or {}
@@ -252,7 +266,7 @@ def load_attention() -> list:
 
 def day_timeline(events: list, reminders: list) -> dict:
     """v1.1 TODAY window: all of today's timed events (past ones too) + tomorrow morning (before 1 PM)."""
-    now = datetime.now(TZ)
+    now = _now()
     today, tmr = now.date(), now.date() + timedelta(days=1)
     day, morning, allday = [], [], []
     for e in events:
@@ -279,7 +293,7 @@ def day_timeline(events: list, reminders: list) -> dict:
 
 
 def build_agenda(events: list, reminders: list, attention: list) -> list:
-    now = datetime.now(TZ)
+    now = _now()
     today = now.date()
     rows = []
     for text in attention:
@@ -294,14 +308,14 @@ def build_agenda(events: list, reminders: list, attention: list) -> list:
         if en <= now:
             continue
         live = s <= now
-        day = "" if s.date() == today else ("TMR " if s.date() == today + timedelta(days=1) else "")
         if s.date() > today + timedelta(days=1):
             continue
+        day = _day_prefix(s, today)
         items.append((s, {"k": "event", "t": day + _clock(s), "title": e["title"], "now": live, "tmr": s.date() != today,
                           "s": s.isoformat(), "e": en.isoformat()}))
     for r in reminders:
         at = datetime.fromisoformat(r["at"])
-        day = "" if at.date() == today else "TMR "
+        day = _day_prefix(at, today)                # reminders reach 3 days out: "SAT 9:00A", not "TMR"
         items.append((at, {"k": "remind", "t": day + _clock(at), "title": r["title"], "tmr": at.date() != today,
                            "s": at.isoformat()}))
     items.sort(key=lambda x: x[0])

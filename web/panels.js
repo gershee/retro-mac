@@ -339,9 +339,13 @@
 
   function drawAgendaBig(ctx, rows, R) {
     frame(ctx, R, 'TODAY');
-    const list = []; let tmrSeen = false;
+    const list = []; let lastDay = '';
+    const DAYS = { TMR: 'TOMORROW', MON: 'MONDAY', TUE: 'TUESDAY', WED: 'WEDNESDAY', THU: 'THURSDAY', FRI: 'FRIDAY',
+                   SAT: 'SATURDAY', SUN: 'SUNDAY' };
+    const dayOf = (r) => { const m = /^([A-Z]{3}) /.exec(String(r.t || '')); return m ? DAYS[m[1]] || m[1] : ''; };
     for (const r of rows || []) {
-      if (r.tmr && !tmrSeen) { tmrSeen = true; list.push({ k: 'div', title: 'TOMORROW' }); }
+      const d = r.tmr ? dayOf(r) || 'TOMORROW' : '';
+      if (d && d !== lastDay) { lastDay = d; list.push({ k: 'div', title: d }); }
       list.push(r);
     }
     const LH = 20, TW = 76, top = R.y + R.titleH + 12, bottom = R.y + R.h - 8;
@@ -380,7 +384,7 @@
       } else if (r.k === 'none') {
         ctx.font = font(14); ctx.fillStyle = '#000'; ctx.fillText(r.title, x0, y + 1);
       } else {
-        const tlabel = String(r.t || '').replace(/^TMR /, '');
+        const tlabel = String(r.t || '').replace(/^[A-Z]{3} /, '');   // the day is on the divider above
         ctx.font = font(14, true);
         if (r.now) { ctx.fillStyle = '#000'; ctx.fillRect(x0 - 3, y - 1, TW - 6, LH - 2); ctx.fillStyle = '#fff'; }
         else ctx.fillStyle = '#000';
