@@ -132,20 +132,26 @@ def _state(key) -> dict:
     return _cur.setdefault(key, {"status": "idle", "label": "", "at": 0.0, "hb": 0.0})
 
 
+def _tick(now: float) -> None:
+    """Every 5 s of quiet. One long model/tool call emits no events; without a heartbeat the display would drop a
+    busy agent from the crew panel (2 min) and declare a voice turn lost (3 min) mid-thought. Entries quiet for
+    STALE_AFTER are dropped: the gateway lives for weeks and gets a new session key per chat."""
+    for key, st in list(_cur.items()):
+        if now - max(st["at"], st["hb"]) > STALE_AFTER:
+            _cur.pop(key, None)       # idle (or a dead turn that no longer gets heartbeats)
+        elif (st["status"] in ("thinking", "working") and now - st["at"] < STALE_AFTER
+                and now - max(st["at"], st["hb"]) >= HEARTBEAT):
+            st["hb"] = now
+            agent, sid = key
+            _post("/activity", {"agent": agent, "status": st["status"], "label": st["label"], "session_id": sid})
+
+
 def _run() -> None:
     while True:
         try:
             path, body = _q.get(timeout=5)
         except queue.Empty:
-            # One long model/tool call emits no events; without a heartbeat the display would drop a busy
-            # agent from the crew panel (2 min) and declare a voice turn lost (3 min) mid-thought.
-            now = time.time()
-            for (agent, sid), st in list(_cur.items()):
-                if (st["status"] in ("thinking", "working") and now - st["at"] < STALE_AFTER
-                        and now - max(st["at"], st["hb"]) >= HEARTBEAT):
-                    st["hb"] = now
-                    _post("/activity", {"agent": agent, "status": st["status"], "label": st["label"],
-                                        "session_id": sid})
+            _tick(time.time())
             continue
         key = (body.get("agent", "alfred"), body.get("session_id") or "")
         st = _state(key)
