@@ -1,0 +1,2 @@
+# Test-only extras (tests/run_all.py): the headless-Chrome tests drive Chrome/Chromium over CDP.
+websockets>=12

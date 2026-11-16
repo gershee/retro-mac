@@ -136,3 +136,36 @@ async def crew_loop(set_crew):
             await set_crew(agent, status, label)
         i += 1
         await asyncio.sleep(random.uniform(9, 16))
+
+
+def seed_crewlog(crewlog) -> None:
+    """Fill today's demo journal (LOG window, key 7; About box tallies) with invented entries, spread over the
+    last few hours. Nothing here is real. Skipped when the demo journal already has entries today."""
+    if crewlog.entries:
+        return
+    now = time.time()
+    local = datetime.now(TZ)
+    since_midnight = (local - local.replace(hour=0, minute=0, second=0, microsecond=0)).total_seconds() / 60
+    k = min(1.0, max(0.05, (since_midnight - 2) / 320))   # early in the day: squeeze the sample into today
+    rows = [  # (minutes ago, kind, agent, text, took seconds)
+        (310, "asked", "alfred", "What is on my calendar today", 0),
+        (309, "reply", "alfred", "You have a stand-up at nine thirty and a design review at eleven.", 0),
+        (265, "done", "scout", "RESEARCHING", 74),
+        (240, "done", "maker", "BUILDING", 188),
+        (236, "reply", "maker", "The demo build is ready to ship.", 0),
+        (180, "done", "maker", "RUNNING TESTS", 41),
+        (150, "asked", "scout", "Find three sample datasets for the kiosk", 0),
+        (146, "done", "scout", "READING PAGE", 33),
+        (145, "reply", "scout", "I found three datasets, all small and free to use.", 0),
+        (95, "done", "alfred", "THINKING", 12),
+        (60, "failed", "alfred", "LIMIT HIT: sample provider limit, retrying later", 0),
+        (35, "done", "maker", "WRITING DOCS", 97),
+        (12, "reply", "alfred", "Everything is running smoothly, nothing urgent.", 0),
+    ]
+    real_now = crewlog.now
+    try:
+        for mins, kind, agent, text, took in rows:
+            crewlog.now = lambda m=mins: now - m * k * 60
+            crewlog.add(kind, agent, text, took=took)
+    finally:
+        crewlog.now = real_now

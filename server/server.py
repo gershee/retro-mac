@@ -75,13 +75,16 @@ state = {"agent": "alfred", "state": "idle", "card": None}
 speak_until = {"t": 0.0}
 armed = {"until": 0.0}   # voice is only allowed while the user has just spoken to us (wake word / Space); otherwise replies stay silent
 
-THEMES = ("green", "amber", "paper", "mono", "cyan")
+THEMES = ("green", "amber", "paper", "mono", "cyan", "aol")   # aol = the opt-in late-90s skin (web/aol.js), last in the T-key cycle
 SETTINGS_FILE = config.DATA_DIR / "settings.json"
-settings = {"theme": "green", "tone": 1.0, "ptt": False}  # tone: 0 = light (paper) .. 1 = dark (theme); ptt: push-to-talk mode (Space bar), wake word off
+CLOCKS = ("off", "flip", "cuckoo", "screensaver", "morph")   # web/clock.js variants; key C on the kiosk cycles them, default off
+settings = {"theme": "green", "tone": 1.0, "ptt": False, "menubar": False, "clock": "off"}  # tone: 0 = light (paper) .. 1 = dark (theme); ptt: push-to-talk mode (Space bar), wake word off; menubar: opt-in classic menu bar (key M); clock: opt-in clock variant (key C), see CLOCKS
+STARTED = time.time()
 PTT_WINDOW = 8.0          # push-to-talk: the mic closes by itself if nobody starts talking within this many seconds
 ptt_req = {"id": 0, "at": 0.0, "kind": "", "window": PTT_WINDOW}   # last Space request; the wake daemon (mic meter + no-speech timeout) follows it
 ptt_seen = {"n": 0, "at": 0.0, "info": {}}   # debug breadcrumb: Space keydown reached the kiosk page (face.js), whether or not the server acted
 ptt_dry = {"n": 0, "at": 0.0, "would": ""}   # /ptt?dry=1 records the decision without pressing tmux keys
+wipe = {"until": 0.0, "total": 0.0}   # opt-in screen-clearing mode (anti burn-in): POST /event {"wipe": minutes}, 0 = stop
 dash = {"type": "dash", "weather": None, "agenda": [], "tz": config.TZ_NAME}   # tz: the kiosk draws clocks in it
 _raw = {"events": [], "reminders": [], "weather_at": 0.0, "cal_at": 0.0}
 refresh_now = asyncio.Event()
@@ -96,12 +99,21 @@ def load_settings():
             settings["tone"] = max(0.0, min(1.0, float(d["tone"])))
         if isinstance(d.get("ptt"), bool):
             settings["ptt"] = d["ptt"]
+        if isinstance(d.get("menubar"), bool):
+            settings["menubar"] = d["menubar"]
+        if d.get("clock") in CLOCKS:
+            settings["clock"] = d["clock"]
     except Exception:
         pass
 
 
 def save_settings():
     SETTINGS_FILE.write_text(json.dumps(settings))
+
+
+def settings_msg() -> dict:
+    """What every display gets: the persisted settings plus the read-only AOL screen name (config.toml [aol])."""
+    return {"type": "settings", **settings, "screen_name": config.SCREEN_NAME}
 
 
 # ---------------------------------------------------------------- text helpers
@@ -362,6 +374,24 @@ crew_meta = {a: {"since": time.time(), "busy_since": 0.0, "busy": "", "spoke": F
              for a in crew}
 CREW_SKIP_LAST = {"", "THINKING", "LISTENING", "HEARD YOU", "PREPARING VOICE", "SPEAKING", "WORKING"}
 
+# Persistent crew journal (what the crew did today) for the LOG window (key 7) and the About box.
+# crewlog.py is stdlib only; entries land in data/logs/crew-log-YYYY-MM-DD.jsonl and survive restarts.
+# Demo mode keeps its own journal under data/logs/demo/ and seeds it with invented entries.
+from crewlog import CrewLog  # noqa: E402
+crewlog = CrewLog(config.LOG_DIR / "demo" if DEMO else config.LOG_DIR)
+crewlog.prune()                                   # drop journal files older than 30 days
+if DEMO:
+    import demo as _demo  # noqa: E402
+    _demo.seed_crewlog(crewlog)
+
+
+def journal(kind: str, agent: str, text: str = "", **extra):
+    try:
+        return crewlog.add(kind, agent, text, **extra)
+    except Exception:                                   # never let the journal take the display down
+        log.exception("journal failed")
+        return None
+
 
 def crew_note(agent: str, status: str, label: str = "", ttl: bool = False):
     """Call BEFORE crew[agent] changes: tracks status start + the last completed activity."""
@@ -383,6 +413,8 @@ def crew_note(agent: str, status: str, label: str = "", ttl: bool = False):
         lab = m["busy"] or ("REPLIED" if m["spoke"] or (took >= 5 and not ttl) else "")
         if lab:
             m["last"] = {"label": lab, "at": now, "took": round(took)}
+            if lab != "REPLIED":                            # replies are journaled with their first sentence (speech_started)
+                journal("done", agent, lab, took=round(took))
             if m["hist"] and m["hist"][0]["label"] == lab:
                 m["hist"][0] = m["last"]
             else:
@@ -573,18 +605,37 @@ async def fail_turn(kind: str, reset=None, why: str = "", force: bool = False) -
     armed["until"] = 0.0                             # mic window released: nothing re-arms for a follow-up
     voice.update(followup=False, window=0.0, say=None)
     state.update(state="idle")
+    journal("failed", (t or {}).get("agent") or "alfred", ("LIMIT HIT: " if kind == "limit" else "FAILED: ") + copy["note"].replace("\n", " "), note=kind)
     await set_voice("failed", copy["note"], fail=fail)
     await enqueue_speech("alfred", [("concerned", copy["say"])], kind="error", progress=True)
     return {"ok": True, "kind": kind, "say": copy["say"], "note": copy["note"]}
 
 
+async def run_capture(args, timeout: float = 3.0) -> tuple:
+    """Run a short command, return (returncode, stdout bytes). On timeout the child is KILLED: tmux is polled
+    2-3x per second and a wedged tmux server used to leave one blocked `tmux` behind per call (asyncio.wait_for
+    cancels the wait, not the process), which piles up hundreds of processes on the kiosk Mac over a day."""
+    p = await asyncio.create_subprocess_exec(*args, stdin=asyncio.subprocess.DEVNULL,
+                                             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+    try:
+        out, _ = await asyncio.wait_for(p.communicate(), timeout)
+    except (asyncio.TimeoutError, asyncio.CancelledError):
+        try:
+            p.kill()
+        except ProcessLookupError:
+            pass
+        try:
+            await asyncio.wait_for(p.wait(), 2)
+        except asyncio.TimeoutError:
+            pass
+        raise
+    return p.returncode, out
+
+
 async def pane_text(history: int = 400) -> str:
     """Text of the hermes-voice tmux pane (read-only). Tests replace this function."""
-    p = await asyncio.create_subprocess_exec(
-        TMUX, "capture-pane", "-p", "-S", f"-{history}", "-t", VOICE_SESSION,
-        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
-    out, _ = await asyncio.wait_for(p.communicate(), 3)
-    return out.decode("utf-8", "ignore") if p.returncode == 0 else ""
+    rc, out = await run_capture([TMUX, "capture-pane", "-p", "-S", f"-{history}", "-t", VOICE_SESSION])
+    return out.decode("utf-8", "ignore") if rc == 0 else ""
 
 
 def pane_marks(raw: str):
@@ -643,8 +694,7 @@ async def tmux_keys(*keys, literal=False):
     if DEMO:
         return                     # demo mode never touches a terminal session
     args = [TMUX, "send-keys", "-t", VOICE_SESSION] + (["-l"] if literal else []) + list(keys)
-    p = await asyncio.create_subprocess_exec(*args, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
-    await asyncio.wait_for(p.wait(), 3)
+    await run_capture(args, 3)
 
 
 async def voice_on_again(reason: str):
@@ -687,11 +737,8 @@ async def voice_watch_loop():
         await asyncio.sleep(0.5)
         lines = []
         try:
-            p = await asyncio.create_subprocess_exec(
-                TMUX, "capture-pane", "-p", "-t", VOICE_SESSION,
-                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
-            out, _ = await asyncio.wait_for(p.communicate(), 3)
-            lines = out.decode("utf-8", "ignore").splitlines() if p.returncode == 0 else []
+            rc, out = await run_capture([TMUX, "capture-pane", "-p", "-t", VOICE_SESSION], 3)
+            lines = out.decode("utf-8", "ignore").splitlines() if rc == 0 else []
         except Exception:
             lines = []
         tail = "\n".join(lines[-6:])
@@ -938,6 +985,8 @@ async def handle_voice_turn(request: web.Request):
             prev["beat"] = now
         return web.json_response({"ok": True, "kind": kind})
     text = "BACKGROUND JOB FINISHED" if kind == "result" else clean_text(raw, 300)
+    if kind == "voice":
+        journal("asked", agent, text[:60])
     turn["t"] = {"session": sid, "agent": agent, "text": text, "label": "THINKING", "started": now,
                  "beat": now, "acks": 0 if kind == "voice" else 99, "kind": kind}
     note = "NEW ASK. THE LAST ONE WAS STOPPED" if prev and prev["kind"] == "voice" and kind == "voice" else ""
@@ -1345,6 +1394,8 @@ async def speech_started(job: dict):
     state.update(agent=agent, state="speaking", card=job["card"])
     await set_crew(agent, "idle")
     last_reply.update(kind=kind or "other", at=time.time())
+    if kind != "error" and job.get("segs"):
+        journal("reply", agent, job["segs"][0][1], note=kind or "")
     if kind:
         t = turn["t"]
         if t and (not sid or sid == t["session"]):
@@ -1353,12 +1404,35 @@ async def speech_started(job: dict):
         await set_voice("speaking")
 
 
+def wipe_public() -> dict:
+    left = max(0.0, wipe["until"] - time.time())
+    return {"type": "wipe", "left": round(left, 1), "total": wipe["total"] if left else 0.0}
+
+
 async def handle_event(request: web.Request):
     try:
         body = await request.json()
     except Exception:
         return web.json_response({"ok": False, "error": "invalid json"}, status=400)
+    if not isinstance(body, dict):
+        return web.json_response({"ok": False, "error": "invalid json"}, status=400)
     changed = False
+    if "wipe" in body:                                 # clearing mode: minutes (true = 20, 0/false = stop); displays follow
+        w = body["wipe"]
+        if w is True:
+            mins = 20.0
+        elif w is False or w is None:
+            mins = 0.0
+        elif isinstance(w, (int, float)):
+            mins = max(0.0, min(float(w), 240.0))
+        else:
+            return web.json_response({"ok": False, "error": "wipe must be minutes or a bool"}, status=400)
+        wipe["until"] = time.time() + mins * 60 if mins > 0 else 0.0
+        wipe["total"] = mins * 60
+        log.info("clearing mode %s", f"ON for {mins:g} min" if mins > 0 else "OFF")
+        await broadcast(wipe_public())
+        if len(body) == 1:
+            return web.json_response({"ok": True, **wipe_public()})
     if body.get("theme") in THEMES:
         settings["theme"] = body["theme"]; changed = True
     if isinstance(body.get("tone"), (int, float)) and not isinstance(body.get("tone"), bool):
@@ -1368,9 +1442,13 @@ async def handle_event(request: web.Request):
             log.info("push-to-talk mode %s", "ON (wake word ignored, tap Space)" if body["ptt"] else "OFF (wake word)")
         settings["ptt"] = body["ptt"]; changed = True
         await broadcast(voice_public())               # banner copy follows the mode at once
+    if isinstance(body.get("menubar"), bool):         # Fable: classic menu bar (opt-in, key M on the kiosk)
+        settings["menubar"] = body["menubar"]; changed = True
+    if body.get("clock") in CLOCKS:                   # clock module (web/clock.js): off | flip | cuckoo | screensaver | morph
+        settings["clock"] = body["clock"]; changed = True
     if changed:
         save_settings()
-        await broadcast({"type": "settings", **settings})
+        await broadcast(settings_msg())
         return web.json_response({"ok": True, **settings})
     msg = {"agent": norm_agent(body.get("agent")), "state": body.get("state", "idle")}
     if "card" in body:
@@ -1469,10 +1547,12 @@ async def handle_ws(request: web.Request):
     await ws.prepare(request)
     clients.add(ws)
     ws_builds[id(ws)] = "old"
-    await ws.send_str(json.dumps({"type": "settings", **settings}))
+    await ws.send_str(json.dumps(settings_msg()))
     await ws.send_str(json.dumps(dash))
     await ws.send_str(json.dumps(crew_public()))
     await ws.send_str(json.dumps(voice_public()))
+    if wipe["until"] > time.time():
+        await ws.send_str(json.dumps(wipe_public()))
     await ws.send_str(json.dumps({"type": "hello", "build": web_build()}))
     log.info("display connected (%d)", len(clients))
     try:
@@ -1505,8 +1585,10 @@ async def handle_health(request: web.Request):
         v["turn"]["beat_age"] = round(now - t["beat"], 1)
         v["turn"]["acks"] = t["acks"]
     return web.json_response({"ok": True, "clients": len(clients), "voices": list(voices),
+                              "started": round(STARTED, 1), "uptime": round(now - STARTED, 1), "journal": crewlog.seq,
                               "speaking_for": round(max(0.0, speak_until["t"] - now), 2),
                               "armed_for": round(max(0.0, armed["until"] - now), 1),
+                              "wipe_for": round(max(0.0, wipe["until"] - now), 1),
                               # wake daemon: open a follow-up mic only after a real voice reply (not "On it.")
                               "followup_ok": last_reply["kind"] in ("voice", "result") and not t
                                              and now - last_reply["at"] < 300,
@@ -1748,7 +1830,8 @@ async def handle_house(request: web.Request):
 # server never imports Hermes. One provider call per LIMITS_TTL; a failed probe keeps serving the last good reading
 # marked stale, and retries after LIMITS_RETRY.
 USAGE_PROBE = ROOT / "scripts" / "usage_probe.py"
-LIMITS_TTL, LIMITS_RETRY, LIMITS_TIMEOUT = 300.0, 60.0, 20.0
+# 30 min (was 5): every probe touches the shared Claude login; fewer touches = fewer token-refresh collisions.
+LIMITS_TTL, LIMITS_RETRY, LIMITS_TIMEOUT = 1800.0, 300.0, 20.0
 limits_cache = {"tried": 0.0, "good": None, "error": ""}
 limits_lock = asyncio.Lock()
 
@@ -1799,6 +1882,16 @@ async def handle_limits(request: web.Request):
     return web.json_response(body, headers={"Cache-Control": "no-store"})
 
 
+async def handle_log(request: web.Request):
+    """Fable LOG window / inbox: today's crew journal. ?since=<unix ts> returns only newer entries (the page polls)."""
+    try:
+        since = float(request.query.get("since") or 0)
+    except ValueError:
+        since = 0.0
+    d = crewlog.today(since)
+    return web.json_response({"ok": True, "at": round(time.time(), 1), "started": round(STARTED, 1), **d})
+
+
 async def handle_index(request: web.Request):
     # Stamp script/style URLs with the current web build so a reload after an edit always fetches the new
     # files (without this, Chrome kept serving a stale panels.js from its heuristic cache).
@@ -1815,6 +1908,7 @@ def make_app() -> web.Application:
     app.router.add_get("/health", handle_health)
     app.router.add_get("/house", handle_house)
     app.router.add_get("/limits", handle_limits)
+    app.router.add_get("/log", handle_log)
     app.router.add_post("/speak", handle_speak)
     app.router.add_post("/event", handle_event)
     app.router.add_post("/attention", handle_attention)
@@ -1840,7 +1934,7 @@ def make_app() -> web.Application:
 # data/logs/server.log rotates at 2 MB x 3 (launchd never rotates). start.sh / launchd send raw stdout+stderr
 # (startup crashes only) to server.out, so nothing else holds server.log open across a rotation.
 LOG_FILE = config.LOG_DIR / "server.log"
-QUIET_PATHS = ('"GET /health', '"POST /level', '"POST /activity', '"GET /house', '"GET /limits')   # polled every few seconds
+QUIET_PATHS = ('"GET /health', '"POST /level', '"POST /activity', '"GET /house', '"GET /limits', '"GET /log')   # polled every few seconds
 
 
 class QuietAccess(logging.Filter):

@@ -13,12 +13,19 @@
   const font = (px, bold) => `${bold ? 'bold ' : ''}${px}px ${MONO}`;
   const WIN = { x: 10, y: 6, w: 486, h: 316, titleH: 20 };
   const OPEN_MS = 150, CLOSE_MS = 120, IDLE_MS = 60e3;
-  const ORDER = ['today', 'crew', 'weather', 'house', 'alerts', 'limits'];
-  const TAB = { today: 'TODAY', crew: 'CREW', weather: 'WEATHER', house: 'HOUSE', alerts: 'ALERTS', limits: 'LIMITS' };
+  const ORDER = ['today', 'crew', 'weather', 'house', 'alerts', 'limits', 'log'];
+  const TAB = { today: 'TODAY', crew: 'CREW', weather: 'WEATHER', house: 'HOUSE', alerts: 'ALERTS', limits: 'LIMITS', log: 'LOG', about: 'ABOUT' };
+  const SHORT = { weather: 'WX', alerts: 'ALERT' }, TINY = { today: 'DAY', weather: 'WX', alerts: 'ALRT', limits: 'LIM' };   // legend squeeze steps (Fable: 7 tabs)
   const DIM_STATES = new Set(['heard', 'listening', 'transcribing', 'working', 'error', 'failed']);
   const Z = { key: null, from: null, at: 0, closing: false, touched: 0, closeKey: null };
   let house = null, houseTry = 0;
   let limits = null, limitsTry = 0;              // GET /limits (Claude plan usage), only while LIMITS is open
+  // Fable LOG window / inbox: GET /log = today's crew journal (server-side, survives restarts). Polled every 20 s while
+  // open, every 90 s otherwise for the unread count in the legend. "Seen" = when the LOG window was last open.
+  let jlog = null, jlogTry = 0, jlogSeen = 0, health = null, healthTry = 0;
+  const mem = { get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} } };
+  const PERSIST = !/[?&]test(&|$)/.test(location.search);   // test pages never touch the kiosk's memory
+  jlogSeen = PERSIST ? (+mem.get('rm-logseen') || 0) : 0;
   const debug = { opens: 0, closes: 0, lastClose: '' };
 
   // ------------------------------------------------------------------ helpers
@@ -107,6 +114,24 @@
       .catch(() => { if (!limits) limits = { ok: false, error: 'kiosk server unreachable' }; });
   }
   function limitsTick() { if (Z.key === 'limits' && !Z.closing && Date.now() - limitsTry > 60e3) fetchLimits(); }
+  function fetchLog() {
+    jlogTry = Date.now();
+    fetch('/log', { cache: 'no-store' }).then(r => (r.ok ? r.json() : null)).then(j => { if (j && j.ok) jlog = j; }).catch(() => {});
+  }
+  function logTick() {
+    const open = Z.key === 'log' || Z.key === 'about';
+    if (Date.now() - jlogTry > (open ? 20e3 : 90e3)) fetchLog();
+    if (Z.key === 'log' && !Z.closing && jlog) markSeen();
+  }
+  function markSeen() {
+    const last = jlog && jlog.entries.length ? jlog.entries[jlog.entries.length - 1].at : 0;
+    if (last > jlogSeen) { jlogSeen = last; if (PERSIST) mem.set('rm-logseen', String(last)); }
+  }
+  const unread = () => (jlog ? jlog.entries.filter(e => e.at > jlogSeen && e.kind !== 'asked').length : 0);
+  function fetchHealth() {
+    healthTry = Date.now();
+    fetch('/health', { cache: 'no-store' }).then(r => (r.ok ? r.json() : null)).then(j => { if (j && j.ok) health = j; }).catch(() => {});
+  }
 
   // ------------------------------------------------------------------ chrome
   function chrome(ctx, r, title, t) {
@@ -141,7 +166,7 @@
     }
     blk(ctx); ctx.font = font(10, true);
     const room = x - x0 - 10;
-    const alts = D.ptt ? [hint, 'SPACE = ASK ME'] : [hint, 'SAY ALFRED = ASK'];   // short form once 6 tabs crowd it
+    const alts = D.ptt ? [hint, 'SPACE = ASK ME', 'SPACE=ASK'] : [hint, 'SAY ALFRED = ASK', 'ASK ME'];   // short forms once 7 tabs crowd it
     const fits = alts.find(s => ctx.measureText(s).width <= room);
     if (fits) {                                          // keycap plate around SPACE / the hint
       box(ctx, x0, y - 1, ctx.measureText(fits).width + 10, 13, 1); ctx.fillText(fits, x0 + 5, y + 1);
@@ -528,6 +553,135 @@
     ctx.fillText(fit(ctx, limits.stale ? 'BAR = USED \u00b7 LAST CHECK FAILED, SHOWING THE LAST GOOD READING' : 'BAR = USED \u00b7 YOUR CLAUDE LOGIN VIA HERMES \u00b7 RECHECKS EVERY 5 MIN', c.w), c.x, by + 1);
   }
 
+  // ------------------------------------------------------------------ LOG (Fable: what the crew did today)
+  const KIND_TAG = { done: 'DID', reply: 'SAID', failed: 'FAIL', asked: 'YOU' };
+  function logRows() { return jlog ? jlog.entries.slice() : []; }
+  function drawLog(ctx, c, D, t) {
+    blk(ctx);
+    if (!jlog) { text(ctx, 'READING THE LOG..', c.x, c.y + 4, 14, true); return; }
+    const rows = logRows(), cnt = jlog.counts || {}, now = Date.now();
+    // tally strip: one box per agent (jobs done + replies), like the CREW window columns
+    const gap = 6, bw = Math.floor((c.w - 2 * gap) / 3);
+    ['alfred', 'scout', 'maker'].forEach((a, i) => {
+      const k = cnt[a] || {}, x = c.x + i * (bw + gap), n = (k.done || 0) + (k.reply || 0);
+      blk(ctx); box(ctx, x, c.y, bw, 30, 2);
+      text(ctx, NAMES[a], x + 7, c.y + 4, 12, true);
+      text(ctx, `${k.done || 0} JOB${k.done === 1 ? '' : 'S'}`, x + 7, c.y + 17, 10, false);
+      text(ctx, `${k.reply || 0} SAID`, x + bw - 7, c.y + 17, 10, false, 'r');
+      if (k.failed) { ctx.fillRect(x + bw - 30, c.y + 3, 24, 12); wht(ctx); text(ctx, `${k.failed}!`, x + bw - 18, c.y + 5, 10, true, 'c'); blk(ctx); }
+      else text(ctx, String(n), x + bw - 7, c.y + 3, 13, true, 'r');
+    });
+    let y = c.y + 38;
+    if (!rows.length) {
+      const cx = c.x + c.w / 2, cy = c.y + c.h / 2 - 20;
+      box(ctx, cx - 18, cy - 24, 36, 30, 2); for (let k = 0; k < 4; k++) ctx.fillRect(cx - 12, cy - 18 + k * 6, 24 - k * 4, 2);   // empty page
+      text(ctx, 'NOTHING LOGGED YET TODAY', cx, cy + 16, 16, true, 'c');
+      text(ctx, 'JOBS, REPLIES AND FAILED TURNS LAND HERE', cx, cy + 38, 11, false, 'c');
+      return;
+    }
+    // header + the newest entries first (the list scrolls by itself: newest at the top)
+    text(ctx, `${jlog.day}  \u00b7  ${rows.length} ENTR${rows.length === 1 ? 'Y' : 'IES'}`, c.x, y, 10, true);
+    const un = unread(); if (un) text(ctx, `${un} NEW SINCE YOU LOOKED`, c.x + c.w, y, 10, true, 'r');
+    y += 13; dots(ctx, c.x, y, c.w); y += 5;
+    const RH = 14, room = Math.floor((c.y + c.h - 4 - y) / RH), list = rows.slice(-room).reverse();
+    const x1 = c.x + 44, x2 = x1 + 34, x3 = x2 + 60;
+    for (const e of list) {
+      const fresh = e.at > jlogSeen && e.kind !== 'asked', fail = e.kind === 'failed';
+      blk(ctx);
+      if (fail) { ctx.fillRect(c.x - 3, y - 2, c.w + 6, RH); wht(ctx); }
+      text(ctx, clock(e.at * 1000), c.x + 40, y, 11, fresh, 'r');
+      ctx.font = font(10, true);
+      const tag = KIND_TAG[e.kind] || e.kind.toUpperCase();
+      if (fresh && !fail) { const tw = ctx.measureText(tag).width + 6; ctx.fillRect(x1 + 2, y - 1, tw, 12); wht(ctx); ctx.fillText(tag, x1 + 5, y); blk(ctx); }
+      else ctx.fillText(tag, x1 + 5, y);
+      text(ctx, NAMES[e.agent] || 'ALFRED', x2 + 8, y, 10, false);
+      const extra = e.kind === 'done' && e.took ? `  (${dur(e.took)})` : e.n > 1 ? `  x${e.n}` : '';
+      const s = (e.kind === 'reply' || e.kind === 'asked' ? '\u201c' + e.text + '\u201d' : e.text.toUpperCase()) + extra;
+      ctx.font = font(11, e.kind === 'done'); ctx.textBaseline = 'top';
+      ctx.fillText(fit(ctx, s, c.x + c.w - x3 - 4), x3, y);
+      y += RH;
+    }
+    if (rows.length > list.length) text(ctx, `+ ${rows.length - list.length} EARLIER`, c.x + c.w, c.y + c.h - 11, 10, false, 'r');
+  }
+
+  // ------------------------------------------------------------------ ABOUT (Fable easter egg: ? / Cmd+? / the apple menu)
+  function macIcon(ctx, x, y) {                  // 1-bit compact Mac, 26 x 34
+    blk(ctx); box(ctx, x, y, 26, 26, 2); ctx.fillRect(x, y + 26, 26, 8);
+    wht(ctx); ctx.fillRect(x + 4, y + 4, 18, 14);
+    blk(ctx); ctx.fillRect(x + 6, y + 7, 14, 2); ctx.fillRect(x + 6, y + 11, 9, 2);
+    wht(ctx); ctx.fillRect(x + 4, y + 29, 10, 2); ctx.fillRect(x + 18, y + 28, 4, 4);
+  }
+  function drawAbout(ctx, c, D, t) {
+    blk(ctx);
+    macIcon(ctx, c.x + 6, c.y + 4);
+    text(ctx, 'RETRO MAC', c.x + 46, c.y + 2, 22, true);
+    text(ctx, 'A 1-BIT FACE FOR ALFRED \u00b7 SCOUT \u00b7 MAKER', c.x + 46, c.y + 26, 10, false);
+    const h = health || {}, up = h.uptime != null ? dur(h.uptime) : '--', b = String(h.build || '').slice(0, 8) || '--';
+    const col2 = c.x + c.w / 2 + 10;
+    let y = c.y + 50; dots(ctx, c.x, y - 6, c.w);
+    const kv = [['SYSTEM', 'RETRO MAC 1.1 + FABLE'], ['WEB BUILD', b.toUpperCase()], ['SERVER UP', up],
+      ['DISPLAYS', String(h.clients != null ? h.clients : '--')], ['VOICES', h.voices ? `${h.voices.length} PIPER` : '--'],
+      ['TALK', D.ptt ? 'SPACE = PUSH TO TALK' : 'WAKE WORD']];
+    kv.forEach(([k, v], i) => { const x = i < 3 ? c.x : col2, yy = y + (i % 3) * 14; text(ctx, k, x, yy, 10, false); text(ctx, v, x + 80, yy, 11, true); });
+    y += 48; dots(ctx, c.x, y, c.w); y += 7;
+    // System 7 style "memory" bars: one per agent, filled by today's jobs + replies (largest = full bar)
+    const cnt = (jlog && jlog.counts) || {}, tot = (a) => ((cnt[a] || {}).done || 0) + ((cnt[a] || {}).reply || 0);
+    const max = Math.max(1, ...['alfred', 'scout', 'maker'].map(tot));
+    text(ctx, 'TODAY', c.x, y, 10, true); text(ctx, jlog ? `${jlog.total || 0} JOURNAL ENTRIES` : 'JOURNAL LOADING..', c.x + c.w, y, 10, false, 'r');
+    y += 14;
+    const BX = c.x + 110, BW = c.w - 110 - 60, P = pats(ctx);
+    for (const a of ['alfred', 'scout', 'maker']) {
+      const n = tot(a), k = cnt[a] || {};
+      blk(ctx); text(ctx, NAMES[a], c.x, y + 1, 12, true); text(ctx, ROLE[a], c.x, y + 13, 8, false);
+      box(ctx, BX, y, BW, 12, 1);
+      if (n) { ctx.fillStyle = P.checker; ctx.fillRect(BX + 2, y + 2, Math.round((BW - 4) * n / max), 8); blk(ctx); ctx.fillRect(BX + 2, y + 2, Math.min(BW - 4, Math.round((BW - 4) * (k.done || 0) / max)), 8); }
+      text(ctx, `${k.done || 0} JOBS \u00b7 ${k.reply || 0} SAID`, c.x + c.w, y + 1, 10, false, 'r');
+      if (k.failed) text(ctx, `${k.failed} FAILED`, c.x + c.w, y + 12, 9, true, 'r');
+      y += 24;
+    }
+    text(ctx, 'BLACK = JOBS DONE   DITHER = REPLIES SPOKEN', BX, y - 4, 9, false);
+    const fy = c.y + c.h - 12;
+    dots(ctx, c.x, fy - 5, c.w);
+    text(ctx, '\u00a9 2026 DANIEL GERSTENHABER \u00b7 MIT \u00b7 LOCAL ONLY, NOTHING LEAVES THIS MAC', c.x + c.w / 2, fy, 9, false, 'c');
+  }
+
+  // ------------------------------------------------------------------ MENU BAR (Fable: opt-in classic Mac bar, key M)
+  // 14 px white strip at the very top (the v1 dashboard starts at y 18, so nothing moves): apple menu = About box,
+  // menu titles open the matching window, the right side shows the real clock (New York). Off by default; the setting
+  // lives in settings.json ("menubar") like theme/tone/ptt, so every display agrees.
+  const MB_H = 14, MB_ITEMS = [['today', 'TODAY'], ['crew', 'CREW'], ['weather', 'WEATHER'], ['house', 'HOUSE'], ['log', 'LOG']];
+  let MBHIT = [], mbClockS = '', mbClockAt = 0;
+  const clockFmt = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'short', hour: 'numeric', minute: '2-digit' });
+  function apple(ctx, x, y) {                    // 1-bit apple, 10 x 11 (bite on the right, leaf on top)
+    ctx.fillRect(x + 5, y, 2, 2); ctx.fillRect(x + 1, y + 3, 8, 2); ctx.fillRect(x, y + 5, 10, 3); ctx.fillRect(x + 1, y + 8, 8, 2); ctx.fillRect(x + 2, y + 10, 2, 1); ctx.fillRect(x + 6, y + 10, 2, 1);
+    wht(ctx); ctx.fillRect(x + 8, y + 5, 2, 2); blk(ctx);
+  }
+  function menubar(ctx, o) {
+    MBHIT = [];
+    const now = Date.now();
+    if (now - mbClockAt > 1000) { mbClockAt = now; mbClockS = clockFmt.format(new Date()).replace(',', '').toUpperCase(); }
+    wht(ctx); ctx.fillRect(0, 0, W, MB_H); blk(ctx); ctx.fillRect(0, MB_H - 1, W, 1);
+    apple(ctx, 10, 2); MBHIT.push({ key: 'about', x: 0, y: 0, w: 28, h: MB_H + 2 });
+    ctx.font = font(10, true); ctx.textBaseline = 'middle';
+    let x = 30;
+    const un = unread();
+    for (const [key, label] of MB_ITEMS) {
+      const s = key === 'log' && un ? `${label} ${un}` : label, w = ctx.measureText(s).width + 12;
+      if (o.key === key) { blk(ctx); ctx.fillRect(x, 0, w, MB_H - 1); wht(ctx); } else blk(ctx);
+      ctx.fillText(s, x + 6, MB_H / 2);
+      MBHIT.push({ key, x, y: 0, w, h: MB_H + 2 }); x += w;
+    }
+    blk(ctx);
+    const cw = ctx.measureText(mbClockS).width; ctx.fillText(mbClockS, W - 8 - cw, MB_H / 2);
+    if (o.skin) {                                // the AOL tag moves into the bar when it is on
+      const s = 'AOL', w = ctx.measureText(s).width + 8, sx = W - 8 - cw - 10 - w;
+      box(ctx, sx, 1, w, MB_H - 3, 1); ctx.fillText(s, sx + 4, MB_H / 2);
+      MBHIT.push({ key: 'aol', x: sx - 2, y: 0, w: w + 4, h: MB_H + 2 });
+    }
+  }
+  const menubarHit = (x, y) => { const r = MBHIT.find(r => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h); return r ? r.key : null; };
+  const menubarClear = () => { MBHIT = []; };
+
   // ------------------------------------------------------------------ titles
   function titleOf(key, D) {
     if (key === 'today') return 'TODAY' + (D.day && D.day.date ? ' - ' + D.day.date : '');
@@ -537,9 +691,11 @@
     if (key === 'house') { if (!house) return 'HOUSE - CHECKING..'; const n = houseDown(); return n ? `HOUSE - ${n} DOWN` : 'HOUSE - ALL SYSTEMS UP'; }
     if (key === 'limits') { if (!limits) return 'LIMITS - CHECKING..'; const r = limRows()[0];
       return r ? `LIMITS - ${r.label} ${100 - Math.max(0, Math.min(100, Math.round(r.used || 0)))}% LEFT` : limits.error === 'not configured' ? 'LIMITS - NOT CONFIGURED' : 'LIMITS - UNAVAILABLE'; }
+    if (key === 'log') { if (!jlog) return 'LOG - READING..'; const n = jlog.entries.length, u = unread(); return n ? `LOG - ${n} TODAY${u ? `, ${u} NEW` : ''}` : 'LOG - QUIET DAY SO FAR'; }
+    if (key === 'about') return 'ABOUT THIS MAC';
     const n = alertItems(D).length; return n ? `ALERTS - ${n}` : 'ALERTS - ALL QUIET';
   }
-  const BODY = { today: drawToday, crew: drawCrewWin, weather: drawWeatherWin, house: drawHouse, alerts: drawAlerts, limits: drawLimits };
+  const BODY = { today: drawToday, crew: drawCrewWin, weather: drawWeatherWin, house: drawHouse, alerts: drawAlerts, limits: drawLimits, log: drawLog, about: drawAbout };
 
   // ------------------------------------------------------------------ state machine
   const lerp = (a, b, p) => a + (b - a) * p;
@@ -547,6 +703,7 @@
   const DEFAULT_FROM = { x: 236, y: 300, w: 40, h: 20 };
   function open(key, from, t) {
     if (!BODY[key]) return;
+    if (key === 'log' || key === 'about') { fetchLog(); if (key === 'about') fetchHealth(); }
     if (Z.key && !Z.closing) { Z.key = key; Z.touched = t; debug.opens++; if (key === 'house' || key === 'alerts') fetchHouse(); if (key === 'limits') fetchLimits(); return; }   // switch: instant
     Object.assign(Z, { key, from: from ? { x: from.x, y: from.y, w: from.w, h: from.h } : DEFAULT_FROM, at: t, closing: false, touched: t });
     debug.opens++;
@@ -570,6 +727,7 @@
   function draw(ctx, D, t) {
     houseTick();
     limitsTick();
+    logTick();
     if (!Z.key) return;
     const vs = window.RetroBanner ? RetroBanner.state().state : 'idle', dim = DIM_STATES.has(vs);
     if (dim) Z.touched = t;                                  // voice turn in progress: never idle-close under it
@@ -608,26 +766,27 @@
   let LEG = [];
   function legend(ctx, o) {
     LEG = [];
-    const down = houseDown(), na = alertItems(o.D || {}).length, y = H - 15, x0 = 16, lim = W - 60;
+    const down = houseDown(), na = alertItems(o.D || {}).length, nl = unread(), y = H - 15, x0 = 16, lim = W - 60;
     const cur = o.key || null;
     ctx.font = font(10, true); ctx.textBaseline = 'middle';
     const num = (i) => `${i + 1}${ORDER[i] === 'house' && down ? '!' : ''}`;
-    const label = (i, short) => {
-      const k = ORDER[i], base = short ? ({ weather: 'WX', alerts: 'ALERT' }[k] || TAB[k]) : TAB[k];
+    const label = (i, short) => {               // short: 0 full, 1 abbreviated (WX/ALERT), 2 tiny (DAY/WX/ALRT/LIM) -- Fable: 7 tabs need the tiny step
+      const k = ORDER[i], base = short === 2 ? (TINY[k] || TAB[k]) : short ? (SHORT[k] || TAB[k]) : TAB[k];
       let s = `${i + 1} ${base}`;
       if (k === 'house' && down) s += short ? '!' : ` ${down}!`;   // short: "4 HOUSE!"
       if (k === 'alerts' && na) s += ` ${na}`;
+      if (k === 'log' && nl) s += ` ${nl}`;
       return s;
     };
     const spaceW = ctx.measureText('SPACE=TALK').width + 8;
     const total = (its, gap) => its.reduce((a, s) => a + ctx.measureText(s).width + 8, 0) + gap * (its.length - 1);
     let mode = 0, items = [];
     for (; mode < 3; mode++) {
-      items = ORDER.map((k, i) => (mode === 2 ? num(i) : label(i, mode === 1)));
-      if (mode === 2 || x0 + total(items, 10) + (o.ptt && !o.dim ? spaceW + 12 : 0) <= lim) break;
+      items = ORDER.map((k, i) => (mode === 3 ? num(i) : label(i, mode)));
+      if (x0 + total(items, 10) + (o.ptt && !o.dim ? spaceW + 12 : 0) <= lim) break;
     }
-    if (o.dim) { mode = 2; items = ORDER.map((k, i) => num(i)); }
-    const gap = mode === 2 ? 8 : 10;
+    if (mode === 3 || o.dim) { mode = 3; items = ORDER.map((k, i) => num(i)); }
+    const gap = mode === 3 ? 8 : 10;
     let x = x0;
     items.forEach((s, i) => {
       const w = ctx.measureText(s).width + 8;
@@ -637,7 +796,7 @@
       x += w + gap;
     });
     blk(ctx);
-    if (o.ptt && mode < 2 && !o.dim) {
+    if (o.ptt && mode < 3 && !o.dim) {
       const xx = lim - spaceW - 4;
       if (xx > x) { box(ctx, xx, y, spaceW, 12, 1); ctx.fillText('SPACE=TALK', xx + 4, y + 7); }
     }
@@ -647,6 +806,8 @@
   const busy = (t) => !!Z.key && (t - Z.at < Math.max(OPEN_MS, CLOSE_MS) + 80);
   const touch = (t) => { Z.touched = t; };
   fetchHouse();
+  fetchLog();
   window.RetroWin = { open, close, reset, toggle, cycle, isOpen, key: () => (isOpen() ? Z.key : null), hit, draw, badges, legend, legendHit, legendClear, busy, touch,
+    menubar, menubarHit, menubarClear, MB_H, unread, log: () => jlog, markSeen,
     ORDER, WIN, house: () => house, debug: () => ({ ...debug, key: Z.key, closing: Z.closing, idleMs: performance.now() - Z.touched }) };
 })();

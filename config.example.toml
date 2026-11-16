@@ -47,3 +47,9 @@ dir = "voices"
 alfred = "en_GB-alan-medium.onnx"
 scout = "en_US-amy-medium.onnx"
 maker = "en_US-joe-medium.onnx"
+
+[aol]
+# Your name on the optional AOL / Windows 98 skin (key T cycles to it): the "Welcome, <name>!" window,
+# the buddy list and your side of the Instant Messages. 3-16 letters, digits or spaces; otherwise "guest".
+# Env RETRO_MAC_SCREEN_NAME overrides. Try one without restarting: /?theme=aol&sn=YourName
+screen_name = "guest"

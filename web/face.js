@@ -33,8 +33,10 @@
     paper: { fg: [0x14, 0x14, 0x12], bg: [0xe9, 0xe8, 0xdc], edge: '#050505', glow: null, scan: false },
     mono:  { fg: [0xf2, 0xf2, 0xf2], bg: [0x00, 0x00, 0x00], edge: '#000', glow: null, scan: false },
     cyan:  { fg: [0x7d, 0xf9, 0xff], bg: [0x00, 0x0f, 0x1c], edge: '#000', glow: '#7df9ff', scan: true },
+    // aol: not a palette but a skin (web/aol.js draws the whole frame in colour); fg/bg only matter if aol.js is missing
+    aol:   { fg: [0x00, 0x00, 0x00], bg: [0xff, 0xff, 0xff], edge: '#008080', glow: null, scan: false, skin: 'aol' },
   };
-  const THEME_ORDER = ['green', 'amber', 'cyan', 'mono', 'paper'];
+  const THEME_ORDER = ['green', 'amber', 'cyan', 'mono', 'paper', 'aol'];
   const canvas = document.getElementById('c');
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   ctx.imageSmoothingEnabled = false;
@@ -47,10 +49,11 @@
   let FGc = THEMES.green.fg, BGc = THEMES.green.bg, SCAN = 0.26;
   const mixc = (a, b, p) => [a[0] + (b[0] - a[0]) * p, a[1] + (b[1] - a[1]) * p, a[2] + (b[2] - a[2]) * p];
   const urlTone = params.has('tone') ? clamp(parseFloat(params.get('tone')) || 0, 0, 1) : null;
-  const urlTheme = params.get('theme') && THEMES[params.get('theme')] ? params.get('theme') : null;
+  const urlTheme = params.get('theme') && THEMES[params.get('theme')] ? params.get('theme') : (params.get('skin') === 'aol' ? 'aol' : null);
   function applyTheme(name) {
     if (!THEMES[name]) return;
     themeName = name; T = THEMES[name]; recolor();
+    if (!T.skin) store.set('rm-v1theme', name);   // what "Switch to Mac" returns to (applyTheme only runs after `store` exists)
   }
   function setTone(v) { tone = clamp(+v, 0, 1); recolor(); const sl = document.getElementById('tone'); if (sl && +sl.value !== Math.round(tone * 100)) sl.value = Math.round(tone * 100); }
   function recolor() {
@@ -58,14 +61,20 @@
     FGc = mixc(P.fg, T.fg, tone); BGc = mixc(P.bg, T.bg, tone);
     SCAN = T.scan ? 0.26 * tone : 0;
     const e = mixc([5, 5, 5], [0, 0, 0], tone).map(Math.round);
-    document.body.style.background = `rgb(${e})`;
+    document.body.style.background = T.skin ? T.edge : `rgb(${e})`;   // a skin owns the desktop colour
     canvas.style.filter = 'none';  // CSS glow removed: too GPU-heavy for fanless-class hardware
   }
   function cycleTheme() {
     const next = THEME_ORDER[(THEME_ORDER.indexOf(themeName) + 1) % THEME_ORDER.length];
-    if (urlTheme) { applyTheme(next); return; }
-    fetch('/event', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ theme: next }) }).catch(() => applyTheme(next));
+    setTheme(next);
   }
+  function setTheme(name) {                      // persist through the server (settings.json); a ?theme= test page stays local
+    if (!THEMES[name]) return;
+    if (urlTheme) { applyTheme(name); return; }
+    fetch('/event', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ theme: name }) }).catch(() => applyTheme(name));
+  }
+  // skin switcher (mouse/touch): v1 -> the skin, or the skin -> the v1 theme that was on before it (remembered per browser)
+  function switchSkin(on) { setTheme(on ? 'aol' : (THEMES[store.get('rm-v1theme')] && !THEMES[store.get('rm-v1theme')].skin ? store.get('rm-v1theme') : 'green')); }
   function toggleFullscreen() {
     if (document.fullscreenElement) document.exitFullscreen();
     else document.documentElement.requestFullscreen().catch(() => {});
@@ -74,7 +83,16 @@
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     if (e.key === 'f' || e.key === 'F') toggleFullscreen();
     if (e.key === 't' || e.key === 'T') cycleTheme();
+    if ((e.key === 'm' || e.key === 'M') && !typingTarget(e.target)) setMenubar(!menubarOn);   // Fable: classic menu bar on/off
   });
+  // Fable: opt-in classic Mac menu bar (14 px strip above the untouched dashboard). Shared setting like theme/tone/ptt;
+  // `?menubar` forces it on for a local preview page without touching settings.json.
+  const MENUBAR_URL = params.has('menubar');
+  let menubarOn = MENUBAR_URL;
+  function setMenubar(on) {
+    if (MENUBAR_URL || urlTheme) { menubarOn = !!on; lastDraw = 0; return; }
+    fetch('/event', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ menubar: !!on }) }).catch(() => { menubarOn = !!on; });
+  }
   addEventListener('dblclick', (e) => { if (performance.now() - lastPanelClick < 700) return; toggleFullscreen(); });
   // light <-> dark slider (auto-hides; [ and ] nudge it from the keyboard)
   const sliderBox = document.getElementById('tonebox'), slider = document.getElementById('tone');
@@ -491,8 +509,10 @@
     }
     const open = level > 0.06;
     if (open) {
-      const w = look.mouthW * (1 - 0.28 * level);
-      const h = 8 + level * 66;
+      // Fable: the lip-sync shape channel (fricatives = wide and flat, vowels = round) widens/flattens the same block
+      const sh = X.mode === 'speaking' ? q(S.shape || 0, 0.25) : 0;
+      const w = look.mouthW * (1 - 0.28 * level + 0.22 * sh);
+      const h = Math.max(6, q((8 + level * 66) * (1 - 0.5 * sh), 2));
       ctx.fillRect(cx - w / 2, y - h / 2 + 6, w, h);
       if (S.agent === 'scout') { ctx.fillStyle = '#fff'; ctx.fillRect(cx - w / 2 + 8, y - h / 2 + 6, w - 16, 3); }
       return;
@@ -520,6 +540,9 @@
     if (X.mode === 'speaking') ey += q(-S.level * 3, 1);
     if (X.gx !== null) ex = X.gx;
     if (X.gy !== null) ey = X.gy;
+    if (X.mode === 'idle' && !X.closed && !X.arc && X.gx === null && window.RetroClock) {   // clock module (cuckoo): glance up at the clock now and then
+      const gz = RetroClock.gaze(t); if (gz) { ex = gz.x; ey = gz.y; }
+    }
     ey += X.bob;
     let blink = 0;
     if (X.closed || X.arc || X.noBlink) S.nextBlink = Math.max(S.nextBlink, t + 700);
@@ -552,9 +575,22 @@
   }
 
   // ---------------------------------------------------------------- 1-bit pass
+  // Fable perf: one 32-bit write per pixel instead of four byte writes + float multiplies (the old loop was the single
+  // biggest CPU cost per frame on the 2017 i5). Output is identical: red < 128 -> FG else BG, odd rows dimmed by SCAN.
+  const LE = new Uint8Array(new Uint32Array([0x0a0b0c0d]).buffer)[0] === 0x0d;
+  const pack = (c, k) => (((255 << 24) | (Math.round(c[2] * k) << 16) | (Math.round(c[1] * k) << 8) | Math.round(c[0] * k)) >>> 0);
   function threshold() {
     const img = ctx.getImageData(0, 0, W, H), d = img.data;
     const FG = FGc, BG = BGc, scan = SCAN > 0.01, k0 = 1 - SCAN;
+    if (LE) {
+      const u = new Uint32Array(d.buffer), fg = pack(FG, 1), bg = pack(BG, 1), fgS = pack(FG, scan ? k0 : 1), bgS = pack(BG, scan ? k0 : 1);
+      for (let row = 0, i = 0; row < H; row++) {
+        const F = row & 1 ? fgS : fg, B = row & 1 ? bgS : bg;
+        for (const end = i + W; i < end; i++) u[i] = (u[i] & 255) < 128 ? F : B;
+      }
+      ctx.putImageData(img, 0, 0);
+      return;
+    }
     let col = 0, row = 0;
     for (let i = 0; i < d.length; i += 4) {
       const c = d[i] < 128 ? FG : BG;
@@ -601,6 +637,7 @@
   // (through the shared analyser) the mouth. Stop cuts every scheduled source and ignores late chunks of that reply.
   const P = { chain: Promise.resolve(), entries: [], nextAt: 0, stopUpto: 0, maxId: 0, cur: null, pending: 0,
     expectUntil: 0, gen: 0, live: false, gapMax: 0, chunks: 0 };
+  const LIPS = window.RetroLips ? RetroLips.create() : { level: 0, shape: 0, peak: 0 };   // Fable lip-sync envelope state
   const SPEECH_EMOTIONS = new Set(['happy', 'thinking', 'surprised', 'curious', 'concerned', 'sleepy']);
   const clock = () => (P.live && S.audioCtx ? S.audioCtx.currentTime : performance.now() / 1000);
   function enqueueAudio(msg) {
@@ -639,6 +676,7 @@
     S.mode = 'speaking'; S.progress = !!m.progress;
     S.emotion = SPEECH_EMOTIONS.has(m.emotion) ? m.emotion : null;
     if (!m.stream || !m.stream.seq) {                   // first sentence of a reply: card + zoom, as before
+      LIPS.peak = 0;                                    // Fable lip-sync: new speaker, re-learn how loud this voice is
       if (window.RetroCards) RetroCards.zoom.reset();   // speech wins: face goes full screen, panels come back normal
       if (window.RetroWin) RetroWin.reset('speech');    // v1.1 windows always yield to speech
       if (m.card) setCard(m.card);
@@ -722,14 +760,18 @@
   addEventListener('keydown', (e) => {
     const RW = window.RetroWin;
     if (RW) RW.touch(performance.now());
+    // Fable easter egg: ? (or Cmd+?) opens the About box, dashboard only, never while the face is talking
+    if (e.key === '?' && RW && HOME === 'dash' && !typingTarget(e.target) && !speechActive() && S.mix >= 0.99) {
+      const now = performance.now(); RW.toggle('about', null, now); busyUntil = now + 400; lastDraw = 0; e.preventDefault(); return;
+    }
     if (e.key === 'Escape' && RW && RW.isOpen() && !speechActive()) { winClose('esc'); e.preventDefault(); return; }   // speech: Esc still stops it
     if (e.key === 'Escape' && window.RetroCards && RetroCards.zoom.isOpen()) { zoomClose(); e.preventDefault(); return; }
     if (e.key === ' ' && pttOn && PTT_OK && !typingTarget(e.target)) { pttSpace(e); e.preventDefault(); return; }
     if (e.key === ' ' || e.key === 'Escape') { stopSpeech(false); e.preventDefault(); }
-    // v1.1 click-in windows: 1 TODAY 2 CREW 3 WEATHER 4 HOUSE 5 ALERTS 6 LIMITS (same key closes), <- -> cycle while open
+    // v1.1 click-in windows: 1 TODAY 2 CREW 3 WEATHER 4 HOUSE 5 ALERTS 6 LIMITS 7 LOG (same key closes), <- -> cycle while open
     if (RW && !e.metaKey && !e.ctrlKey && !e.altKey && !e.repeat && !typingTarget(e.target) && HOME === 'dash') {
       const now = performance.now();
-      if (/^[1-6]$/.test(e.key)) {
+      if (/^[1-7]$/.test(e.key)) {
         if (S.playing || S.queue.length || S.mix < 0.99) return;          // the face owns the screen while it talks
         const key = RW.ORDER[+e.key - 1], src = { today: 'agenda', crew: 'crew', weather: 'weather' }[key];
         RW.toggle(key, hitRects.find(h => h.key === src) || null, now); busyUntil = now + 400; lastDraw = 0;
@@ -744,12 +786,31 @@
     ctx.fillRect(x + 1, y + 1, 1, h - 2); ctx.fillRect(x + w - 2, y + 1, 1, h - 2);
     ctx.fillStyle = '#fff'; ctx.font = 'bold 10px Menlo, monospace'; ctx.textBaseline = 'middle'; ctx.fillText('PTT', x + 4, y + h / 2 + 1);
   }
+  // Skin switcher tag (v1 look): a tiny boxed "AOL" in the empty strip above the weather panel, top-right. Drawn only on the plain
+  // dashboard (same rule as the key legend) and only when a skin is installed; a click/tap signs on to the AOL skin. Additive: nothing
+  // else in the v1 layout moves. The skin draws its own way back (taskbar "Mac" button / Start menu).
+  let skinTag = null;
+  function drawSkinTag() {
+    skinTag = null;
+    if (!window.RetroAOL || !THEMES.aol) return;
+    ctx.font = 'bold 9px Menlo, monospace'; ctx.textBaseline = 'middle';
+    const s = 'AOL', w = Math.ceil(ctx.measureText(s).width) + 8, h = 11, x = W - 18 - w, y = 4;
+    ctx.fillStyle = '#fff'; ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = '#000'; ctx.fillRect(x, y, w, 1); ctx.fillRect(x, y + h - 1, w, 1); ctx.fillRect(x, y, 1, h); ctx.fillRect(x + w - 1, y, 1, h);
+    ctx.fillText(s, x + 4, y + h / 2 + 1);
+    skinTag = { x: x - 4, y: 0, w: w + 8, h: h + 8 };     // a little slack for fingers
+  }
+  function skinTagClick(x, y) {
+    const r = skinTag; if (!r || x < r.x || x >= r.x + r.w || y < r.y || y >= r.y + r.h) return false;
+    switchSkin(true); return true;
+  }
   function bannerClick(e) {
     if (!window.RetroBanner || (e.target !== canvas && e.target !== document.body && e.target !== canvas.parentNode)) return false;
     const r = canvas.getBoundingClientRect();
     return RetroBanner.hit((e.clientX - r.left) * W / r.width, (e.clientY - r.top) * H / r.height);
   }
-  addEventListener('click', (e) => { if (bannerClick(e)) {
+  addEventListener('click', (e) => { if (T.skin && window.RetroAOL && skinClick(e)) return;   // the AOL skin routes its own windows/buttons
+    if (bannerClick(e)) {
       stopSpeech(false);
       const bs = window.RetroBanner && RetroBanner.state();   // 'STILL TRYING... TAP TO CANCEL': the tap cancels the stuck turn
       if (bs && bs.state === 'working' && bs.turn && bs.turn.stuck) fetch('/stop', { method: 'POST' }).catch(() => {});
@@ -758,6 +819,17 @@
 
   // ---------------------------------------------------------- panel zoom
   let hitRects = [], lastPanelClick = 0;   // panel rects drawn last frame (canvas coords)
+  // ---- skin hook (theme "aol"): aol.js draws the whole frame from the same state; nothing here runs for other themes
+  function skinClick(e) {
+    if (e.target !== canvas && e.target !== document.body && e.target !== canvas.parentNode) return false;
+    const r = canvas.getBoundingClientRect();
+    return !!RetroAOL.click((e.clientX - r.left) * W / r.width, (e.clientY - r.top) * H / r.height, performance.now());
+  }
+  const skinAPI = {
+    S, M, W, H, params, canvas, dash: () => dash, cur: () => P.cur, hour: hourNow, ptt: () => pttOn && PTT_OK, theme: () => themeName,
+    speechActive, stop: () => stopSpeech(false), winClose, emote, switchSkin,
+    drawFace: (t, mix) => { const keep = S.mix; S.mix = mix; drawFace(t); S.mix = keep; },
+  };
   function zoomClose() { RetroCards.zoom.close(performance.now()); busyUntil = performance.now() + RetroCards.zoom.MS + 120; }
   function winClose(why) { RetroWin.close(performance.now(), why); busyUntil = performance.now() + 400; lastDraw = 0; }
   const WIN_OF = { weather: 'weather', agenda: 'today', crew: 'crew' };     // dashboard panel -> v1.1 click-in window
@@ -769,6 +841,14 @@
     if (speechActive()) return false;        // while speech plays a tap anywhere stops it, exactly as in v1
     const r = canvas.getBoundingClientRect();
     const x = (e.clientX - r.left) * W / r.width, y = (e.clientY - r.top) * H / r.height;
+    if (skinTagClick(x, y)) { lastPanelClick = now; return true; }   // tiny AOL tag (only present on the plain dashboard)
+    if (window.RetroClock && RetroClock.click(x, y)) { lastPanelClick = now; lastDraw = 0; return true; }   // tiny CLK tag: cycles the clock variants
+    const mb = RW && menubarOn && HOME === 'dash' ? RW.menubarHit(x, y) : null;   // Fable menu bar: apple = About, titles = windows
+    if (mb) {
+      if (mb === 'aol') switchSkin(true);
+      else { RW.toggle(mb, hitRects.find(h => h.key === ({ today: 'agenda', crew: 'crew', weather: 'weather' })[mb]) || null, now); busyUntil = now + 400; }
+      lastPanelClick = now; lastDraw = 0; return true;
+    }
     if (RW && RW.isOpen()) {                 // close box / outside closes; a click inside just keeps it open
       const h = RW.hit(x, y);
       if (h === 'inside') RW.touch(now); else winClose(h === 'close' ? 'closebox' : 'outside');
@@ -802,7 +882,8 @@
     ws.onerror = () => ws.close();
     ws.onmessage = (ev) => {
       let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
-      if (m.type === 'settings') { if (!PTT_URL) pttOn = !!m.ptt; if (!urlTheme) applyTheme(m.theme); if (typeof m.tone === 'number' && urlTone === null) setTone(m.tone); return; }
+      if (m.type === 'settings') { if (!PTT_URL) pttOn = !!m.ptt; if (!MENUBAR_URL) menubarOn = !!m.menubar; if (window.RetroClock && m.clock !== undefined) RetroClock.setting(m.clock); if (window.RetroAOL && m.screen_name) RetroAOL.setScreenName(m.screen_name); if (!urlTheme) applyTheme(m.theme); if (typeof m.tone === 'number' && urlTone === null) setTone(m.tone); return; }
+      if (m.type === 'wipe') { window.dispatchEvent(new CustomEvent('rm-wipe', { detail: m })); return; }   // burnin.js: clearing mode
       if (m.type === 'dash') { dash = m; if (window.RetroTime) RetroTime.setTz(m.tz); return; }
       if (m.type === 'crew') { const prev = S.crew; S.crew = m.crew; if (window.RetroCards) RetroCards.noteCrew(m.crew); crewMood(prev, m.crew); return; }
       if (m.type === 'stop') { stopSpeech(true, m.upto); return; }
@@ -830,7 +911,8 @@
   let last = performance.now(), lastDraw = 0, busyUntil = 0;
   function frame(t) {
     // Power saver: full 30fps only while something is happening; ~12fps when the screen is just idling, ~9fps asleep.
-    const fast = S.playing || (S.queue && S.queue.length) || t < busyUntil || (S.card && t - S.cardAt < 1000) || (window.RetroWin && RetroWin.busy(t));
+    const fast = S.playing || (S.queue && S.queue.length) || t < busyUntil || (S.card && t - S.cardAt < 1000) || (window.RetroWin && RetroWin.busy(t))
+      || (T.skin && window.RetroAOL && RetroAOL.busy(t)) || (window.RetroClock && RetroClock.busy(t));
     const active = fast || S.mode !== 'idle' || S.card || (window.RetroBanner && RetroBanner.active());
     const idleMs = M.shown === 'sleep' ? 110 : M.shown === 'rest' ? 95 : 80;
     if (t - lastDraw < (fast ? 30 : active ? 66 : idleMs)) { requestAnimationFrame(frame); return; }
@@ -852,14 +934,24 @@
     }
     moodTick(t);
     // lip sync: fast attack, slow release, from the audio's RMS (or a soft fake while muted)
+    // Fable: RetroLips (web/lipsync.js) = frame-rate independent envelope + per-voice auto gain + noise gate + a
+    // shape channel from the zero-crossing rate. The muted fake and the legacy rule stay as fallbacks.
     let raw = 0;
-    if (S.mode === 'speaking') {
-      raw = t < S.simUntil
-        ? 0.5 + 0.5 * Math.sin(t * 0.021 + S.simSeed) * Math.sin(t * 0.0067 + S.simSeed * 2)
-        : clamp(measureRms() * 4.2, 0, 1);
-      raw = Math.pow(clamp(raw, 0, 1), 0.8);
+    if (S.mode === 'speaking' && t >= S.simUntil && window.RetroLips && S.analyser) {
+      S.analyser.getFloatTimeDomainData(S.buf);
+      const mm = RetroLips.measure(S.buf);
+      RetroLips.step(LIPS, mm.rms, mm.zcr, dt);
+      S.level = LIPS.level; S.shape = LIPS.shape;
+    } else {
+      if (S.mode === 'speaking') {
+        raw = t < S.simUntil
+          ? 0.5 + 0.5 * Math.sin(t * 0.021 + S.simSeed) * Math.sin(t * 0.0067 + S.simSeed * 2)
+          : clamp(measureRms() * 4.2, 0, 1);
+        raw = Math.pow(clamp(raw, 0, 1), 0.8);
+      }
+      S.level += (raw - S.level) * (raw > S.level ? 0.55 : 0.16);
+      S.shape = 0; LIPS.level = S.level; LIPS.shape = 0;
     }
-    S.level += (raw - S.level) * (raw > S.level ? 0.55 : 0.16);
     if (S.mode !== 'speaking' && S.level < 0.02) S.level = 0;
 
     if (S.cardClearAt && t > S.cardClearAt) {      // a finished card shrinks into a mini tile
@@ -872,6 +964,13 @@
     const target = aside ? 1 : 0;
     S.mix = clamp(S.mix + Math.sign(target - S.mix) * dt / 320, 0, 1);
 
+    if (T.skin && window.RetroAOL) {               // AOL skin: same state, different screen (colour, no 1-bit pass)
+      RetroAOL.frame(ctx, t, skinAPI); hitRects = [];
+      if (window.RetroWin) RetroWin.menubarClear();    // Fable: no stale menu-bar hit rects under the skin
+      if (window.RetroClock) RetroClock.hide();        // clock module: the AOL taskbar keeps its own clock
+      if (dbg) dbg.textContent = `${S.agent} ${S.mode} mood=${M.label} skin=aol ${RetroAOL.debug().phase}`;
+      requestAnimationFrame(frame); return;
+    }
     ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
     ctx.save();
     // step the shrink so it reads as a retro cut, not a smooth zoom
@@ -896,6 +995,8 @@
         }
       }
       if (window.RetroWin) RetroWin.badges(ctx, hitRects, { agenda: dash.agenda });
+      if (window.RetroWin && menubarOn && HOME === 'dash') RetroWin.menubar(ctx, { key: RetroWin.key(), skin: !!(window.RetroAOL && THEMES.aol) });   // Fable: under windows, like the panels
+      else if (window.RetroWin) RetroWin.menubarClear();
       RC.drawZoom(ctx, { weather: dash.weather, agenda: dash.agenda, crew: S.crew,
         speaker: S.playing ? S.agent : null, card: RC.zoom.key() === 'tile' ? S.tile : S.card }, t);
       if (window.RetroWin) RetroWin.draw(ctx, { weather: dash.weather, agenda: dash.agenda, day: dash.day, crew: S.crew, ptt: pttOn && PTT_OK }, t);
@@ -908,10 +1009,16 @@
     if (window.RetroWin) {                         // v1.1 key legend: plain dashboard only (yields to windows, zooms, banners, speech)
       const RW = window.RetroWin, RC2 = window.RetroCards;
       if (S.mix >= 0.99 && HOME === 'dash' && !RW.key() && !(RC2 && RC2.zoom.isOpen()) && !(window.RetroBanner && RetroBanner.active()) && !S.playing && !S.queue.length)
-        RW.legend(ctx, { D: { agenda: dash.agenda }, ptt: pttOn && PTT_OK, dim: M.shown === 'sleep' });
-      else RW.legendClear();
+        { RW.legend(ctx, { D: { agenda: dash.agenda }, ptt: pttOn && PTT_OK, dim: M.shown === 'sleep' }); if (!menubarOn) drawSkinTag(); else skinTag = null; }
+      else { RW.legendClear(); skinTag = null; }
     }
     if (pttOn && PTT_OK) drawPttTag();
+    if (window.RetroClock) {                       // opt-in clock module (key C / CLK tag): off by default; may take the whole screen as a screensaver
+      const RWk = window.RetroWin, RCk = window.RetroCards, bn = window.RetroBanner && RetroBanner.active();
+      const own = S.playing || S.queue.length || S.card || bn || (RWk && RWk.key()) || (RCk && RCk.zoom.isOpen());
+      const ok = S.mix >= 0.99 && HOME === 'dash' && !own;
+      RetroClock.draw(ctx, t, { ok, tag: ok, busy: !!own || S.mode !== 'idle', agent: S.agent, menubar: menubarOn, skin: false });
+    }
     if (window.RetroBanner) RetroBanner.draw(ctx, t);
     threshold();
     if (dbg) dbg.textContent = `${S.agent} ${S.mode} mood=${M.label} h=${hourNow(t).toFixed(1)} quiet=${Math.round((t - M.lastAct) / 1000)}s lvl=${S.level.toFixed(2)} ctx=${S.audioCtx ? S.audioCtx.state : 'none'}`;
@@ -963,6 +1070,7 @@
       live: P.live, emotion: S.emotion, progress: !!S.progress, stopUpto: P.stopUpto, text: P.cur ? P.cur.msg.text : null }),
     mood: () => ({ mood: M.label, ambient: M.amb, emote: M.emote, voice: M.voice, hour: hourNow(performance.now()), quietS: (performance.now() - M.lastAct) / 1000 }),
     ptt: () => ({ on: pttOn, url: PTT_URL, ok: PTT_OK, ...pttDiag }),
+    lips: () => ({ level: S.level, shape: S.shape || 0, peak: LIPS.peak, menubar: menubarOn }),
     audio: () => { try { return ensureAudio(); } catch (e) { return null; } },
   };
   applyTheme(urlTheme || 'green');

@@ -19,6 +19,7 @@ Hermes gateway / TUI ──(plugin hooks, HTTP)──▶ display server ──(W
 - `POST /activity {agent, status, label}` updates the crew panel. Stale statuses decay back to idle.
 - `POST /event` handles settings and test events (theme, tone, ptt, `force: true` test speech). `POST /attention` sets the alert list.
 - Voice endpoints: `/ptt`, `/arm`, `/disarm`, `/voice_state`, `/voice_turn`, `/voice_pending`, `/voice_error`, `/voice_junk`, `/level`. The server follows the voice session's pane in tmux to know whether Hermes is recording, transcribing or working. It sends the record key itself, so the kiosk's Space bar works like a hardware talk button.
+- `GET /log` serves the LOG window (key 7) from `server/crewlog.py`, a stdlib-only journal of the day (`data/logs/crew-log-*.jsonl`). `POST /event` also takes `{menubar, clock, wipe}`.
 - `GET /health` and `GET /house` serve the HOUSE window, which pings the services listed in `config.toml [house]`.
 
 **`server/feeds.py`.** Open-Meteo weather and "what to wear" advice. Agenda rows come from the configured calendar command (JSON events) plus Hermes cron reminders (`$HERMES_HOME/cron/jobs.json`).
@@ -28,7 +29,11 @@ Hermes gateway / TUI ──(plugin hooks, HTTP)──▶ display server ──(W
 **`web/`: the kiosk page.** Everything is drawn on one 512×342 canvas and scaled with nearest-neighbor.
 - `face.js`: per-agent faces, the mood state machine (time of day, idle time, crew activity, voice state, tone tags), gapless audio scheduling and analyser-driven lip-sync, and keyboard handling.
 - `panels.js`: the dashboard cards and their zoomed views.
-- `windows.js`: the classic-Mac click-in windows (TODAY, CREW, WEATHER, HOUSE, ALERTS).
+- `windows.js`: the classic-Mac click-in windows (TODAY, CREW, WEATHER, HOUSE, ALERTS, LIMITS, LOG), the About box (`?`) and the optional menu bar (`M`).
+- `aol.js`: the opt-in AOL / Windows 98 skin (theme `aol`). face.js hands it every frame while that theme is on; with another theme it is never called. Your screen name comes from `config.toml [aol]` through the websocket `settings` message.
+- `clock.js`: the four optional clocks (flip, cuckoo, screensaver, morph; key `C`).
+- `burnin.js`: anti burn-in (pixel orbit, night rest, clearing mode on `W`; `?noburn` disables it).
+- `lipsync.js`: the mouth envelope (per-voice auto gain, noise gate, vowel/fricative shape).
 - `banner.js`: the voice banner (LISTENING → GOT IT → WORKING → SPEAKING) and the step checklist.
 
 **`hermes-plugin/retro_mac_face/`: Hermes plugin.** Hook handlers enqueue work for a single daemon thread. Every failure is swallowed, so the display can never break agent turns or chat delivery.

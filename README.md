@@ -33,8 +33,11 @@ The [full prompt](docs/AGENT-INSTALL.md) walks the agent through the demo, your 
 - **Push-to-talk.** Tap Space to talk and tap it again to send. Tapping Space while a face is speaking interrupts it. A status banner shows LISTENING → GOT IT → WORKING → SPEAKING, with a live checklist of the agent's tool steps narrated in plain English. An optional wake-word daemon ([sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) keyword spotting) is also included.
 - **Crew activity panel.** It shows who is thinking, working or idle, and on what. It is fed live by Hermes plugin hooks. Only short verbs and file names are sent, never command text or file contents.
 - **Dashboard.** Weather from [Open-Meteo](https://open-meteo.com) (free, no key) with "umbrella / light jacket" advice, today's agenda from any calendar command you plug in, Hermes cron reminders, and an attention list.
-- **Classic-Mac click-in windows.** Press keys 1-6 or click a panel to zoom open TODAY, CREW, WEATHER, HOUSE (local service health), ALERTS and LIMITS (optional Claude plan usage). They use the 1984 zoom-rect animation.
-- **Themes.** Green, amber, cyan, mono and paper phosphor themes, plus a light/dark tone slider. Scanlines are included.
+- **Classic-Mac click-in windows.** Press keys 1-7 or click a panel to zoom open TODAY, CREW, WEATHER, HOUSE (local service health), ALERTS, LIMITS (optional Claude plan usage) and LOG (the crew log). They use the 1984 zoom-rect animation. Press `?` for an About box with the day's tallies, and `M` for an optional classic menu bar.
+- **Crew log (key 7).** A persistent journal of what the crew did today: finished jobs, first sentence of each spoken reply, failed or rate-limited turns and short voice questions. It survives restarts (`data/logs/crew-log-YYYY-MM-DD.jsonl`, kept 30 days, never committed). Demo mode shows invented sample entries.
+- **Themes and skins.** Green, amber, cyan, mono and paper phosphor themes, plus a light/dark tone slider and scanlines. The last theme in the `T` cycle is an opt-in **AOL / Windows 98 skin**: sign-on and dial-up screen, buddy list driven by the real crew feed, spoken replies as Instant Messages, "You've Got Mail!" when a job finishes, and a taskbar with a Start menu. A tiny `AOL` tag (top right) and the Start menu switch to it and back, so it works by touch too. Everything is drawn in code, with no Microsoft or AOL assets.
+- **Four clocks (key C).** Off by default. `C` (or the tiny `CLK` tag) cycles **flip** (split-flap cards), **cuckoo** (a crew member pops out of a cuckoo house on the hour), **screensaver** (after 10 quiet minutes the dashboard dissolves into stars and big bouncing digits) and **morph** (digits dissolve into the next ones). The choice persists.
+- **Anti burn-in.** Built for an always-on LCD: a pixel orbit shifts the picture a few device pixels every couple of minutes, a night rest (11:30 PM to 6 AM, 20 quiet minutes) dims and shrinks the screen, and a **clearing mode** (`W`) cycles colours to help with retention that already exists. Any key, mouse move, speech or crew activity wakes it at once. `?noburn` turns the whole layer off.
 - **Built for a kiosk.** It runs full-screen in Chrome, auto-starts with launchd, keeps the display awake, and includes a `doctor.sh` health check.
 
 ![moods](docs/media/moods.png)
@@ -109,11 +112,33 @@ Use a different port: `RETRO_MAC_PORT=8797 ./start.sh --demo`. Stop the server w
 |---|---|
 | Space | push-to-talk (tap = talk, tap = send); while a face speaks: stop it |
 | Esc | stop speech / close window |
-| 1-6 | open TODAY, CREW, WEATHER, HOUSE, ALERTS, LIMITS (press again to close) |
+| 1-7 | open TODAY, CREW, WEATHER, HOUSE, ALERTS, LIMITS, LOG (press again to close) |
 | ← → | cycle windows |
-| T | cycle theme |
+| T | cycle theme (the last one is the AOL / Windows 98 skin) |
+| M | classic Mac menu bar on/off (the Apple menu opens About; titles open windows) |
+| ? | About box (dashboard only, not while a face is talking) |
+| C | cycle the clock: off, flip, cuckoo, screensaver, morph |
+| W | anti burn-in clearing mode, 20 minutes (press again or Esc to stop) |
 | [ ] | tone darker / lighter |
 | F | fullscreen |
+
+Theme, menu bar, clock and tone are shared by every open display and survive restarts (`data/settings.json`). The same switches are available over HTTP, for example `curl -X POST 127.0.0.1:8787/event -d '{"clock":"flip"}'`, `'{"theme":"aol"}'`, `'{"menubar":true}'` or `'{"wipe":20}'` (minutes, 0 = stop, max 240).
+
+Page parameters for previews and tuning (they never change the saved settings): `?noburn` (anti burn-in layer off), `?theme=aol`, `?menubar`, `?clock=flip|cuckoo|screensaver|morph`, `?sn=Name` (try a screen name), `?test&hour=3&idle=120` (fake the clock).
+
+## Settings
+
+Static settings live in `config.toml` (copy `config.example.toml`); `.env.example` lists the environment overrides.
+
+| Setting | Where | Default |
+|---|---|---|
+| Your AOL screen name (the "Welcome, name!" window, buddy list, IMs) | `[aol] screen_name` or env `RETRO_MAC_SCREEN_NAME` | `guest` |
+| Weather location and title | `[location]` | San Francisco |
+| Calendar command, house services, voices, Claude usage | `[calendar]`, `[house]`, `[voices]`, `[limits]` | off / empty |
+| Port, demo mode | `[server]`, `RETRO_MAC_PORT`, `RETRO_MAC_DEMO` | 8787, off |
+| Runtime state directory (settings, logs, crew log) | `RETRO_MAC_DATA` | `./data` |
+
+A screen name is 3 to 16 letters, digits and spaces; anything else falls back to `guest`. It is read by the server and pushed to the display, so it is never in the web code.
 
 ## Full setup with Hermes
 
@@ -145,7 +170,7 @@ Key 6 opens LIMITS: how much of your Claude subscription's 5-hour session window
 python = "~/.hermes/hermes-agent/venv/bin/python"
 ```
 
-The server runs `scripts/usage_probe.py` with that interpreter (it imports Hermes' `agent.account_usage`; the display server itself never imports Hermes), at most once every 5 minutes and only while the window is open. The probe prints labels, percentages and reset times as JSON, never a token. Check it by hand with `~/.hermes/hermes-agent/venv/bin/python scripts/usage_probe.py`. Unset, the window says NOT CONFIGURED; demo mode shows sample numbers.
+The server runs `scripts/usage_probe.py` with that interpreter (it imports Hermes' `agent.account_usage`; the display server itself never imports Hermes), at most once every 30 minutes (a failed probe retries after 5) and only while the window is open. The probe prints labels, percentages and reset times as JSON, never a token. Check it by hand with `~/.hermes/hermes-agent/venv/bin/python scripts/usage_probe.py`. Unset, the window says NOT CONFIGURED; demo mode shows sample numbers.
 
 ## Keys and accounts
 
@@ -191,12 +216,14 @@ To redistribute anything or use it commercially, swap Alan and Amy for CC0/CC-BY
 
 ```
 server/          aiohttp display server (server.py), feeds, config, demo data
-web/             canvas front end: face.js (faces, moods, lip-sync), panels.js, windows.js, banner.js
+web/             canvas front end: face.js (faces, moods, lip-sync), panels.js, windows.js, banner.js,
+                 aol.js (AOL skin), clock.js (4 clocks), burnin.js (anti burn-in), lipsync.js (mouth envelope)
 hermes-plugin/   retro_mac_face Hermes plugin (hooks -> display)
 voice/           wake/push-to-talk mic daemon, Hermes voice tmux session, whisper helper
 scripts/         kiosk, ptt, say, demo tour, fetch-models, autostart, doctor, usage probe
 examples/        launchd plist templates
-tests/           silent spare-port tests (no speakers, no model calls)
+tests/           silent spare-port tests (no speakers, no model calls); `python tests/run_all.py`
+                 runs them all. The Chrome tests (burn-in, clocks) also need `pip install -r requirements-dev.txt`
 docs/media/      screenshots and the demo GIF
 ```
 

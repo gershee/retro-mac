@@ -74,7 +74,18 @@ DEFAULTS = {
         "scout": "en_US-amy-medium.onnx",
         "maker": "en_US-joe-medium.onnx",
     },
+    "aol": {
+        # Your name on the optional AOL skin (theme "aol", key T): the "Welcome, <name>!" window, buddy list, IMs.
+        # 3-16 letters / digits / spaces. Env RETRO_MAC_SCREEN_NAME overrides.
+        "screen_name": "guest",
+    },
 }
+
+
+def clean_screen_name(v, default: str = "guest") -> str:
+    """Screen names are 3-16 chars of letters, digits and spaces; anything else falls back to the default."""
+    s = " ".join("".join(c for c in str(v or "") if c.isascii() and (c.isalnum() or c == " ")).split())[:16].strip()
+    return s if len(s) >= 3 else default
 
 
 def _merge(base: dict, over: dict) -> dict:
@@ -100,6 +111,8 @@ def load() -> dict:
         cfg["hermes"]["home"] = env["HERMES_HOME"]
     if env.get("RETRO_MAC_HERMES_PYTHON"):
         cfg["limits"]["python"] = env["RETRO_MAC_HERMES_PYTHON"]
+    if env.get("RETRO_MAC_SCREEN_NAME"):
+        cfg["aol"]["screen_name"] = env["RETRO_MAC_SCREEN_NAME"]
     if not cfg["location"].get("timezone"):
         cfg["location"]["timezone"] = _local_tz_name()
     return cfg
@@ -113,6 +126,7 @@ HERMES_HOME = _expand(CFG["hermes"]["home"])
 VOICE_SESSION = CFG["hermes"]["voice_session"]
 HERMES_PYTHON = _expand(CFG["limits"]["python"]) if CFG["limits"].get("python") else None
 LIMITS_PROVIDER = str(CFG["limits"].get("provider") or "anthropic")
+SCREEN_NAME = clean_screen_name((CFG.get("aol") or {}).get("screen_name"))
 # Runtime state (settings.json, attention.json, logs). Never committed.
 DATA_DIR = _expand(os.environ.get("RETRO_MAC_DATA") or ROOT / "data")
 DATA_DIR.mkdir(parents=True, exist_ok=True)
