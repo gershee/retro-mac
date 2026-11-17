@@ -168,7 +168,7 @@
   const dayFmt = new Intl.DateTimeFormat('en-CA', { timeZone: TZ });
   function hourNow(t) {
     if (fakeHour !== null) return fakeHour;
-    if (t - M.hourAt > 15000) {
+    if (t - M.hourAt > 2000) {                 // 2 s: the AOL taskbar clock reads this; 15 s lagged it past the minute
       M.hourAt = t;
       const p = hourFmt.formatToParts(new Date()), get = (k) => +(p.find(x => x.type === k) || { value: 0 }).value;
       M.hour = (get('hour') % 24) + get('minute') / 60;

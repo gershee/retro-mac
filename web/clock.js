@@ -92,6 +92,7 @@
     }
   }
   const FONT = 'bold 9px Menlo, "Courier New", monospace';
+  const FONT_S = 'bold 10px Menlo, "Courier New", monospace';   // date / AM-PM labels: 9px Menlo breaks up under the 1-bit threshold
   const text = (ctx, s, x, y, color, font) => { ctx.fillStyle = color || INK; ctx.font = font || FONT; ctx.textBaseline = 'middle'; ctx.fillText(s, x, y); };
   const box = (ctx, x, y, w, h, bw, color) => { ctx.fillStyle = color; ctx.fillRect(x, y, w, bw); ctx.fillRect(x, y + h - bw, w, bw); ctx.fillRect(x, y, bw, h); ctx.fillRect(x + w - bw, y, bw, h); };
   let checker = null;
@@ -166,6 +167,7 @@
   let flipCards = [];
   const CARD_X = [0, 37, 83, 120];
   function cardHalf(ctx, x, y, f, half) {               // one half of a card face: bg, border, digit, split line
+    if (!f.d) return;                                   // blank hour-tens card (1-9 o'clock): an empty framed card read as '8'
     const ink = f.inv ? PAPER : INK, bg = f.inv ? INK : PAPER, h2 = CH / 2;
     ctx.save();
     ctx.beginPath(); ctx.rect(x, half === 'top' ? y : y + h2, CW, h2); ctx.clip();
@@ -185,19 +187,19 @@
       if (!k.anim && (k.shown.d !== target[i].d || k.shown.inv !== target[i].inv)) { k.anim = true; k.from = k.shown; k.to = target[i]; k.t0 = t; }
       const x = x0 + CARD_X[i], y = y0, mid = y + CH / 2;
       if (!k.anim) {
-        if (!k.shown.inv) { ctx.fillStyle = INK; ctx.fillRect(x + 2, y + CH, CW, 2); ctx.fillRect(x + CW, y + 2, 2, CH); }   // 2 px drop shadow (paper look)
+        if (!k.shown.inv && k.shown.d) { ctx.fillStyle = INK; ctx.fillRect(x + 2, y + CH, CW, 2); ctx.fillRect(x + CW, y + 2, 2, CH); }   // 2 px drop shadow (paper look)
         cardHalf(ctx, x, y, k.shown, 'top'); cardHalf(ctx, x, y, k.shown, 'bottom');
         continue;
       }
       anim = true;
       const p = clamp((t - k.t0) / FLIP_MS, 0, 1);
-      if (!k.to.inv) { ctx.fillStyle = INK; ctx.fillRect(x + 2, y + CH, CW, 2); ctx.fillRect(x + CW, y + 2, 2, CH); }
+      if (!k.to.inv && k.to.d) { ctx.fillStyle = INK; ctx.fillRect(x + 2, y + CH, CW, 2); ctx.fillRect(x + CW, y + 2, 2, CH); }
       cardHalf(ctx, x, y, k.to, 'top'); cardHalf(ctx, x, y, k.from, 'bottom');
       const up = p < 0.5, s = Math.max(0.04, Math.round((up ? 1 - p * 2 : (p - 0.5) * 2) * 6) / 6);   // stepped: a retro cut, not a smooth zoom
       ctx.save();
       ctx.translate(0, mid); ctx.scale(1, s); ctx.translate(0, -mid);
       cardHalf(ctx, x, y, up ? k.from : k.to, up ? 'top' : 'bottom');
-      if (s < 0.85) { ctx.fillStyle = checkerPat(ctx); ctx.fillRect(x + 2, up ? y + 2 : mid + 1, CW - 4, CH / 2 - 3); }   // shadowed flap in mid-air
+      if (s < 0.85 && (up ? k.from : k.to).d) { ctx.fillStyle = checkerPat(ctx); ctx.fillRect(x + 2, up ? y + 2 : mid + 1, CW - 4, CH / 2 - 3); }   // shadowed flap in mid-air
       ctx.restore();
       if (p >= 1) { k.anim = false; k.shown = k.to; }
     }
@@ -205,10 +207,10 @@
     const cx = x0 + 76;
     ctx.fillStyle = INK; ctx.fillRect(cx, y0 + 15, 6, 6); ctx.fillRect(cx, y0 + 31, 6, 6);
     const dateS = `${c.dow} ${c.mon} ${c.day}`;
-    text(ctx, dateS, x0 + 2, y0 + CH + 11, INK);
-    ctx.font = FONT; const aw = Math.ceil(ctx.measureText(c.ampm).width) + 8;
+    text(ctx, dateS, x0 + 2 + (c.digits[0] === '' ? CARD_X[1] : 0), y0 + CH + 11, INK, FONT_S);   // under the first visible card
+    ctx.font = FONT_S; const aw = Math.ceil(ctx.measureText(c.ampm).width) + 8;
     ctx.fillStyle = INK; ctx.fillRect(x0 + 157 - aw, y0 + CH + 5, aw, 12);
-    text(ctx, c.ampm, x0 + 157 - aw + 4, y0 + CH + 11.5, PAPER);
+    text(ctx, c.ampm, x0 + 157 - aw + 4, y0 + CH + 11.5, PAPER, FONT_S);
     return anim;
   }
 
@@ -243,12 +245,15 @@
     ctx.fillStyle = INK; ctx.fillRect(x0, y0 + 13, ww, 1);
     ctx.fillStyle = PAPER; ctx.fillRect(x0 + 6, y0 + 2, 9, 9); box(ctx, x0 + 6, y0 + 2, 9, 9, 1, INK);
     const title = `${c.dow} ${c.mon} ${c.day}`;
-    ctx.font = FONT; const tw = Math.ceil(ctx.measureText(title).width) + 10, tx = x0 + (ww - tw) / 2;
-    ctx.fillStyle = PAPER; ctx.fillRect(tx, y0 + 1, tw, 12); text(ctx, title, tx + 5, y0 + 7.5, INK);
+    ctx.font = FONT_S; const tw = Math.ceil(ctx.measureText(title).width) + 10, tx = Math.round(x0 + (ww - tw) / 2);
+    ctx.fillStyle = PAPER; ctx.fillRect(tx, y0 + 1, tw, 12); text(ctx, title, tx + 5, y0 + 7.5, INK, FONT_S);
     // content
     const cy = y0 + 14, ch = wh - 15;
     ctx.fillStyle = inv ? INK : PAPER; ctx.fillRect(x0 + 1, cy, ww - 2, ch);
-    const dy0 = cy + ((ch - DH) >> 1), pairW = DW * 2 + 3, sx = x0 + 10;
+    // a blank hour-tens slot (1-9 o'clock) centres the other three like the screensaver does; only once slot 0 has settled
+    // blank, so the 1:00 melt plays in place and the window never jumps mid-melt
+    const s0 = morphSlots[0], blank0 = c.digits[0] === '' && (!s0 || (s0.shown === '' && (!s0.anim || !s0.to)));
+    const dy0 = cy + ((ch - DH) >> 1), pairW = DW * 2 + 3, sx = x0 + 10 - (blank0 ? (DW + 3) >> 1 : 0);
     const DX = [sx, sx + DW + 3, sx + pairW + 14, sx + pairW + 14 + DW + 3];
     let anim = false;
     for (let i = 0; i < 4; i++) {
@@ -258,14 +263,14 @@
       if (s.anim) {
         anim = true;
         const p = clamp((t - s.t0) / MORPH_MS, 0, 1);
-        ctx.drawImage(digitBitmap(s.from, s.to, SC, p, s.invFrom, s.invTo, 'm' + i), DX[i], dy0);
+        if (s.from || s.to) ctx.drawImage(digitBitmap(s.from, s.to, SC, p, s.invFrom, s.invTo, 'm' + i), DX[i], dy0);   // blank slot = content bg
         if (p >= 1) { s.anim = false; s.shown = s.to; s.inv = s.invTo; }
-      } else ctx.drawImage(digitBitmap(s.shown, s.shown, SC, 1, s.inv, s.inv, 'm' + i), DX[i], dy0);
+      } else if (s.shown) ctx.drawImage(digitBitmap(s.shown, s.shown, SC, 1, s.inv, s.inv, 'm' + i), DX[i], dy0);
     }
     const colX = sx + pairW + 3, fg = inv ? PAPER : INK;
     ctx.fillStyle = fg; ctx.fillRect(colX + 4, dy0 + 12, 4, 4); ctx.fillRect(colX + 4, dy0 + 28, 4, 4);
-    ctx.save(); ctx.font = FONT;
-    text(ctx, c.ampm, x0 + ww - 22, dy0 + DH - 4, fg);
+    ctx.save(); ctx.font = FONT_S;
+    text(ctx, c.ampm, x0 + ww - 23, dy0 + DH - 4, fg, FONT_S);
     ctx.restore();
     return anim;
   }
