@@ -42,6 +42,20 @@ The [full prompt](docs/AGENT-INSTALL.md) walks the agent through the demo, your 
 
 ![moods](docs/media/moods.png)
 
+### Clocks (key C) and the AOL skin (key T)
+
+![the four clocks: flip, cuckoo on the hour, screensaver, morph](docs/media/clocks.gif)
+
+| Flip | Cuckoo (on the hour) | Screensaver | Morph |
+|---|---|---|---|
+| ![flip clock](docs/media/clock-flip.png) | ![cuckoo clock announcing 3 o'clock](docs/media/clock-cuckoo.png) | ![screensaver clock](docs/media/clock-screensaver.png) | ![morph clock window](docs/media/clock-morph.png) |
+
+| Default look (green phosphor) | AOL / Windows 98 skin | Cuckoo close-up |
+|---|---|---|
+| ![dashboard with the face](docs/media/dashboard-face.png) | ![AOL skin with the buddy list](docs/media/aol-skin.png) | ![cuckoo clock at 3 PM](docs/media/cuckoo-hour.gif) |
+
+Screenshots and GIFs come from `./start.sh --demo` (invented weather, agenda and crew log; screen name `guest`).
+
 ## How it works
 
 ```mermaid
