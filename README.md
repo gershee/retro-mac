@@ -42,6 +42,18 @@ The [full prompt](docs/AGENT-INSTALL.md) walks the agent through the demo, your 
 
 ![moods](docs/media/moods.png)
 
+### Classic Mac menu bar (key M) and the original-Mac paper look
+
+Press **M** for a System 6-style menu bar (apple menu, TODAY / CREW / WEATHER / HOUSE / LOG, clock on the right; `?menubar` previews it). Slide LIGHT↔DARK, or pick the `paper` theme, for the cream 1-bit look of the original Macintosh.
+
+| Menu bar, green phosphor | Menu bar, paper (original Mac) | LOG window (key 7) |
+|---|---|---|
+| ![classic Mac menu bar on the green theme](docs/media/menubar-green.png) | ![classic Mac menu bar on the cream paper theme](docs/media/menubar-paper.png) | ![crew log window](docs/media/window-log.png) |
+
+All themes, menu-bar variants and the AOL skin side by side:
+
+![every theme and look](docs/media/themes.png)
+
 ### Clocks (key C) and the AOL skin (key T)
 
 ![the four clocks: flip, cuckoo on the hour, screensaver, morph](docs/media/clocks.gif)
@@ -54,7 +66,7 @@ The [full prompt](docs/AGENT-INSTALL.md) walks the agent through the demo, your 
 |---|---|---|
 | ![dashboard with the face](docs/media/dashboard-face.png) | ![AOL skin with the buddy list](docs/media/aol-skin.png) | ![cuckoo clock at 3 PM](docs/media/cuckoo-hour.gif) |
 
-Screenshots and GIFs come from `./start.sh --demo` (invented weather, agenda and crew log; screen name `guest`).
+Screenshots and GIFs come from `./start.sh --demo` (invented weather, agenda and crew log; screen name configurable, `guest` by default).
 
 ## How it works
 
